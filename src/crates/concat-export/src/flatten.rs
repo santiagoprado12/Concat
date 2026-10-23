@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
+// SPDX-FileCopyrightText: 2026 Jareer Abdullah and Concat contributors
 
 //! Flattening a project document into the exporter's clip list.
 //!
@@ -105,6 +105,14 @@ pub fn flatten_timeline_in(
                     .unwrap_or(&[])
                     .iter()
                     .map(|point| (point.at, point.speed))
+                    .collect(),
+                speed_slopes: clip
+                    .speed_curve
+                    .as_deref()
+                    .filter(|points| concat_project::speed::is_smooth(points))
+                    .unwrap_or(&[])
+                    .iter()
+                    .filter_map(|point| point.slope)
                     .collect(),
                 animation: export_keys(clip),
                 flip_h: clip.flip_h,

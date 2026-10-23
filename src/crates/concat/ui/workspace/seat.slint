@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
+// SPDX-FileCopyrightText: 2026 Jareer Abdullah and Concat contributors
 
 import { Theme } from "../theme/theme.slint";
 import { Payload } from "../util.slint";
@@ -431,6 +431,7 @@ export component Seat inherits Rectangle {
             lanes-resized(width) => { Editor.lanes-resized(width); }
             floor-pressed => { Editor.blur(); }
             key-mark-moved(from, to) => { Editor.key-mark-moved(from, to); }
+            key-mark-opened => { Editor.key-mark-opened(); }
             scrubbed(seconds) => {
                 Editor.blur();
                 Editor.scrubbed(seconds);

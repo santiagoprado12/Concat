@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
+// SPDX-FileCopyrightText: 2026 Jareer Abdullah and Concat contributors
 
 //! Rendering the session to a file.
 //!
@@ -54,7 +54,7 @@ pub struct Progress {
     pub frame: i64,
     /// Frames in total.
     pub total: i64,
-    /// What the exporter is doing: "video", "audio", "mux".
+    /// What the exporter is doing: "rendering", "mixing audio", "muxing".
     pub stage: &'static str,
 }
 

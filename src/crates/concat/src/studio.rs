@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
+// SPDX-FileCopyrightText: 2026 Jareer Abdullah and Concat contributors
 
 //! The window's state, and how it is published into Slint.
 //!
@@ -70,6 +70,7 @@ use crate::panes::settings::installed;
 use crate::platform;
 use crate::prefs::Preferences;
 use crate::presets::{self, TextPreset};
+use crate::speed_ramp;
 use crate::ui::*;
 
 /// The monitor's output sizes, matching the picker's rows.
@@ -655,6 +656,10 @@ pub struct Models {
     pub link_wheels: RefCell<HashMap<i32, Rc<VecModel<WheelData>>>>,
     pub link_curves: RefCell<HashMap<i32, Rc<VecModel<CurveData>>>>,
     pub curve_points: RefCell<HashMap<(i32, String), Rc<VecModel<CurvePointData>>>>,
+    /// The Speed tab's curve: its points and the presets' names, kept like
+    /// the colour curves' so a point being dragged is not dropped.
+    pub speed_points: Rc<VecModel<CurvePointData>>,
+    pub speed_presets: Rc<VecModel<SharedString>>,
     /// The keyframe cluster's rows and the libraries' views: synced like
     /// the rest, since a model handed over fresh is unequal to the last by
     /// identity and re-evaluates every binding on it.
@@ -740,6 +745,8 @@ impl Models {
             link_wheels: RefCell::new(HashMap::new()),
             link_curves: RefCell::new(HashMap::new()),
             curve_points: RefCell::new(HashMap::new()),
+            speed_points: Rc::new(VecModel::default()),
+            speed_presets: Rc::new(VecModel::default()),
             key_rows: Rc::new(VecModel::default()),
             key_editor_rows: Rc::new(VecModel::default()),
             key_marks: Rc::new(VecModel::default()),
@@ -1143,7 +1150,7 @@ fn new_title_style(prefs: &crate::prefs::Preferences) -> TextStyle {
         ..TextStyle::default()
     });
     TextStyle {
-        content: "New title".to_owned(),
+        content: t("studio.newTitle"),
         ..base
     }
 }
@@ -1188,11 +1195,8 @@ fn package_art(
             package
                 .folder
                 .as_deref()
-                .and_then(|folder| slint::Image::load_from_path(&folder.join("preview.png")).ok())
-                .or_else(|| {
-                    let card = card_paths.get(id)?;
-                    slint::Image::load_from_path(card).ok()
-                })
+                .and_then(|folder| image_at(&folder.join("preview.png")))
+                .or_else(|| image_at(card_paths.get(id)?))
                 .or_else(|| bundled_card(id))
                 .unwrap_or_default()
         })
@@ -1550,7 +1554,7 @@ fn command_name(command: &Command) -> String {
 /// stabilization, a speed, the
 /// keys, and one patch for everything else that differs. Empty when
 /// nothing does.
-fn clip_commands(id: &str, before: &Clip, after: &Clip) -> Vec<Command> {
+fn clip_commands(id: &str, before: &Clip, after: &Clip, magnetic: bool) -> Vec<Command> {
     let mut commands = Vec::new();
     if after.scale != before.scale
         || after.offset_x != before.offset_x
@@ -1581,9 +1585,26 @@ fn clip_commands(id: &str, before: &Clip, after: &Clip) -> Vec<Command> {
             stabilize: after.stabilize,
         });
     }
-    if after.speed != before.speed {
+    if after.speed_curve != before.speed_curve {
+        // A curve, changed or new, is one command; a curve taken away is
+        // the constant rate the echo left, which SetClipSpeed sets and
+        // which ends the curve.
+        commands.push(match &after.speed_curve {
+            Some(_) => Command::SetClipSpeedCurve {
+                clip_id: id.to_owned(),
+                ripple: magnetic,
+                curve: after.speed_curve.clone(),
+            },
+            None => Command::SetClipSpeed {
+                clip_id: id.to_owned(),
+                ripple: magnetic,
+                speed: after.speed,
+            },
+        });
+    } else if after.speed != before.speed {
         commands.push(Command::SetClipSpeed {
             clip_id: id.to_owned(),
+            ripple: magnetic,
             speed: after.speed,
         });
     }
@@ -2102,19 +2123,24 @@ pub enum Confirm {
     QuitWithoutSaving { error: String },
 }
 
-/// One clip on the clipboard: the clip as it was when copied, and the row
-/// of the lane it sat on. A lane's id belongs to its timeline, so a paste
-/// into another timeline goes by the row instead and lands the clip on
-/// the same row there (#290).
+/// One clip on the clipboard: the clip as it was when copied, the row of
+/// the lane it sat on, and the file it plays. A lane's id belongs to its
+/// timeline, so a paste into another timeline goes by the row instead and
+/// lands the clip on the same row there (#290). A media id belongs to its
+/// project, so a paste into another project goes by the file: the same
+/// id there is another file or none, and the paste laid the wrong footage
+/// down or nothing at all.
 #[derive(Clone, Debug)]
 pub struct Held {
     pub row: usize,
     pub clip: Clip,
+    pub media: Option<model::MediaItem>,
 }
 
 /// The edits that make `placed` - the whole of `source`'s file, just laid
 /// on a free stretch of the lane - into a copy of `source` at `start` on
-/// `track_id`: its frames, speed, placement, keys and mix.
+/// `track_id`: its frames, speed and placement, and then everything else
+/// it has (see [`match_command`]).
 ///
 /// The footage is trimmed at normal speed to what the source covers, then
 /// retimed - the speed command keeps the footage covered and recomputes
@@ -2146,12 +2172,14 @@ fn copy_commands(source: &Clip, placed: &Clip, track_id: &str, start: f64) -> Ve
     if (source.speed - 1.0).abs() > 1e-9 {
         commands.push(Command::SetClipSpeed {
             clip_id: created.clone(),
+            ripple: false,
             speed: source.speed,
         });
     }
     if source.speed_curve.is_some() {
         commands.push(Command::SetClipSpeedCurve {
             clip_id: created.clone(),
+            ripple: false,
             curve: source.speed_curve.clone(),
         });
     }
@@ -2162,44 +2190,24 @@ fn copy_commands(source: &Clip, placed: &Clip, track_id: &str, start: f64) -> Ve
             track_id: track_id.to_owned(),
         }],
     });
-    commands.push(Command::SetClipTransform {
-        clip_id: created.clone(),
-        scale: Some(source.scale),
-        offset_x: Some(source.offset_x),
-        offset_y: Some(source.offset_y),
-        rotation: Some(source.rotation),
-        stretch_x: Some(source.stretch_x),
-        stretch_y: Some(source.stretch_y),
-    });
-    for key in &source.keys {
-        commands.push(Command::SetClipKey {
-            clip_id: created.clone(),
-            property: key.property,
-            at: key.at,
-            value: key.value,
-            ease: key.ease,
-        });
-    }
-    commands.push(Command::UpdateClip {
-        clip_id: created.clone(),
-        patch: ClipPatch {
-            name: Some(format!("{} copy", source.name)),
-            volume: Some(source.volume),
-            fade_in: Some(source.fade_in),
-            fade_out: Some(source.fade_out),
-            opacity: Some(source.opacity),
-            preserve_pitch: Some(source.preserve_pitch),
-            muted: source.muted,
-            flip_h: Some(source.flip_h),
-            flip_v: Some(source.flip_v),
-            blend: Some(source.blend.clone()),
-            crop: Some(source.crop),
-            filters: Some(source.filters.clone()),
-            video_effects: Some(source.video_effects.clone()),
-            ..ClipPatch::default()
-        },
-    });
+    commands.push(match_command(source, created));
     commands
+}
+
+/// Makes `created` like `source` in everything but its place, named as a
+/// copy. The whole clip goes, not a list of its fields: the list this
+/// replaced was written before masks, cutouts, stabilizing, backgrounds
+/// and enhancing, and a copy quietly lost every one of them.
+fn match_command(source: &Clip, created: &str) -> Command {
+    let mut like = source.clone();
+    // A title's name follows its words; anything else says it is a copy.
+    if like.text.is_none() {
+        like.name = format!("{} copy", source.name);
+    }
+    Command::MatchClip {
+        clip_id: created.to_owned(),
+        like: Box::new(like),
+    }
 }
 
 /// Where each held clip lands: `(row, start)` per clip in the order held,
@@ -2339,7 +2347,7 @@ impl Studio {
             posters: HashMap::new(),
             posters_pending: HashSet::new(),
             lengths: HashMap::new(),
-            project_name: "Untitled project".into(),
+            project_name: t("common.untitledProject"),
             dock: default_dock(),
             dock_aside: crate::dock::compact_dock(),
             compact: false,
@@ -4431,7 +4439,10 @@ impl Studio {
     }
 
     pub fn chain_add(&mut self, audio: bool, id: &str) {
+        // Added from the chain in view: stay there, unlike a library card (#462).
+        let jump = self.inspector_jump;
         self.apply_catalogue(id, !audio);
+        self.inspector_jump = jump;
     }
 
     pub fn chain_toggle(&mut self, audio: bool, index: i32) {
@@ -4510,6 +4521,92 @@ impl Studio {
                 link.params.insert(key.to_owned(), f64::from(value));
             }
         });
+    }
+
+    /// The Speed tab's Constant | Curve, on the echo. A curve starts flat
+    /// at the clip's rate and a constant rate is the curve's mean, so the
+    /// clip keeps its length either way until something is shaped.
+    pub fn speed_curve_set(&mut self, on: bool) {
+        self.edit_speed_curve(|points, speed| match (on, points.is_some()) {
+            (true, false) => *points = Some(speed_ramp::flat(speed)),
+            (false, true) => *points = None,
+            _ => {}
+        });
+    }
+
+    /// One point of the Speed tab's curve, on the echo: moved, or put down
+    /// when `point` is negative. `y` is the graph's height for the speed.
+    pub fn speed_curve_point(&mut self, point: i32, x: f32, y: f32) {
+        self.edit_speed_curve(|points, _| {
+            if let Some(points) = points.as_mut() {
+                speed_ramp::set_point(points, point, x.into(), y.into());
+            }
+        });
+    }
+
+    /// One point of the Speed tab's curve taken off, on the echo.
+    pub fn speed_curve_remove(&mut self, point: i32) {
+        self.edit_speed_curve(|points, _| {
+            if let Some(points) = points.as_mut() {
+                speed_ramp::remove_point(points, point);
+            }
+        });
+    }
+
+    /// The Speed tab's curve made smooth or straight, on the echo.
+    pub fn speed_curve_smooth(&mut self, smooth: bool) {
+        self.edit_speed_curve(|points, _| {
+            if let Some(points) = points.as_mut() {
+                speed_ramp::set_smooth(points, smooth);
+            }
+        });
+    }
+
+    /// The Speed tab's curve brought to `speed` at its fastest (or its
+    /// slowest), on the echo: one of the tab's two sliders.
+    pub fn speed_curve_extreme(&mut self, faster: bool, speed: f32) {
+        self.edit_speed_curve(|points, _| {
+            if let Some(points) = points.as_mut() {
+                speed_ramp::set_extreme(points, faster, speed.into());
+            }
+        });
+    }
+
+    /// The Speed tab's curve replaced by preset `index`'s, on the echo.
+    pub fn speed_curve_preset(&mut self, index: i32) {
+        self.edit_speed_curve(|points, _| {
+            if let Some(preset) = speed_ramp::preset_points(index) {
+                *points = Some(preset);
+            }
+        });
+    }
+
+    /// The selected clip's curve on the echo, handed to `edit` with the
+    /// clip's rate; the rate and the length then follow the curve the way
+    /// SetClipSpeedCurve will make them, so the timeline shows the clip
+    /// growing and shrinking under the pointer. Nothing for a clip that has
+    /// no speed - a still, a title.
+    fn edit_speed_curve(&mut self, edit: impl FnOnce(&mut Option<Vec<model::SpeedPoint>>, f64)) {
+        let Some(id) = self.sole_selection() else {
+            return;
+        };
+        self.commit_targets = vec![id.clone()];
+        self.begin_echo();
+        let Some(clip) = self.echo_clip_mut(&id) else {
+            return;
+        };
+        if !matches!(clip.kind, model::ClipKind::Video | model::ClipKind::Audio) {
+            return;
+        }
+        let covered = clip.duration * clip.speed;
+        let mut points = clip.speed_curve.clone();
+        edit(&mut points, clip.speed);
+        if let Some(curve) = points.as_deref() {
+            let mean = concat_project::speed::mean_of(curve).clamp(0.0625, 16.0);
+            clip.speed = mean;
+            clip.duration = (covered / mean).max(f64::from(MIN_DURATION));
+        }
+        clip.speed_curve = points;
     }
 
     /// One point of one of the colour panel's curves, on the echo: moved,
@@ -5249,10 +5346,13 @@ impl Studio {
                     write_keyable(clip, model::KeyProperty::Volume, value.max(0.0), at)
                 }
                 ClipField::Speed => {
+                    // A rate set by hand is a constant rate: the curve goes,
+                    // as SetClipSpeed takes it.
                     let speed = value.clamp(0.0625, 16.0);
                     clip.duration =
                         (clip.duration * clip.speed / speed).max(f64::from(MIN_DURATION));
                     clip.speed = speed;
+                    clip.speed_curve = None;
                 }
                 ClipField::PreservePitch => clip.preserve_pitch = value != 0.0,
                 ClipField::FlipH => clip.flip_h = value != 0.0,
@@ -5606,7 +5706,7 @@ impl Studio {
             ) else {
                 continue;
             };
-            commands.extend(clip_commands(id, before, after));
+            commands.extend(clip_commands(id, before, after, self.prefs.magnetic));
         }
         if commands.is_empty() {
             return;
@@ -7594,7 +7694,7 @@ impl Studio {
             &ids,
             at,
             side,
-            self.prefs.magnetic,
+            self.closes_gap(&ids),
         ) else {
             self.notify(&t("studio.parkPlayheadInsideClip"), true);
             return;
@@ -7784,8 +7884,29 @@ impl Studio {
             self.remove_transition();
             return;
         }
-        let magnetic = self.prefs.magnetic;
+        let magnetic = self.closes_gap(&self.selection);
         self.remove_selected(magnetic);
+    }
+
+    /// Whether removing these clips closes the gap they leave: always with
+    /// the magnetic timeline on, and on a phone, until the person sets it,
+    /// when every one of them is on the main picture's lane - CapCut's main
+    /// track, where a Split and Delete is done (#497). Titles, captions and
+    /// overlays keep their time there: a caption deleted must not pull the
+    /// ones after it off the words they were timed to.
+    fn closes_gap(&self, ids: &[String]) -> bool {
+        if self.prefs.magnetic {
+            return true;
+        }
+        if !self.prefs.magnetic() {
+            return false;
+        }
+        let main = self.timeline().background_lane();
+        !ids.is_empty()
+            && ids.iter().all(|id| {
+                self.clip(id)
+                    .is_some_and(|clip| main == Some(clip.track_id.as_str()))
+            })
     }
 
     /// Ripple delete (⇧⌫): the selection goes and each lane closes behind
@@ -7838,7 +7959,7 @@ impl Studio {
                     && at < clip.start + clip.duration - edge
             });
         let Some(clip) = target else {
-            self.notify("Park the playhead inside a picture clip to freeze", true);
+            self.notify(&t("studio.parkPlayheadToFreeze"), true);
             return;
         };
 
@@ -7965,7 +8086,13 @@ impl Studio {
             .filter_map(|id| {
                 let clip = self.clip(id)?.clone();
                 let row = tracks.iter().position(|track| track.id == clip.track_id)?;
-                Some(Held { row, clip })
+                let media = self
+                    .project()
+                    .media
+                    .iter()
+                    .find(|item| item.id == clip.media_id)
+                    .cloned();
+                Some(Held { row, clip, media })
             })
             .collect();
         if held.is_empty() {
@@ -8021,7 +8148,10 @@ impl Studio {
             let Some((row, start)) = place else {
                 continue;
             };
-            if let Some(id) = self.place_copy(&held.clip, &tracks[row], start, Some("paste")) {
+            let Some(source) = self.held_here(held) else {
+                continue;
+            };
+            if let Some(id) = self.place_copy(&source, &tracks[row], start, Some("paste")) {
                 created.push(id);
             }
         }
@@ -8032,6 +8162,48 @@ impl Studio {
         if !created.is_empty() {
             self.selection = created;
         }
+    }
+
+    /// The held clip as this project knows it: playing this project's
+    /// media item for its file - the same one when it was copied here, the
+    /// one with the same path when it was copied elsewhere, or the file
+    /// added to the bin when this project has not got it.
+    fn held_here(&mut self, held: &Held) -> Option<Clip> {
+        let mut clip = held.clip.clone();
+        let Some(item) = &held.media else {
+            return Some(clip);
+        };
+        let here = self
+            .project()
+            .media
+            .iter()
+            .find(|mine| mine.path == item.path)
+            .map(|mine| mine.id.clone());
+        clip.media_id = match here {
+            Some(id) => id,
+            None => self.apply_in(
+                Some("paste"),
+                Command::AddMedia {
+                    item: concat_project::commands::NewMedia {
+                        path: item.path.clone(),
+                        name: item.name.clone(),
+                        duration: item.duration,
+                        kind: item.kind,
+                        width: item.width,
+                        height: item.height,
+                        frame_rate: item.frame_rate,
+                        frame_rate_fraction: item.frame_rate_fraction.clone(),
+                        video_codec: item.video_codec.clone(),
+                        audio_codec: item.audio_codec.clone(),
+                        has_audio: item.has_audio,
+                        audio_tracks: item.audio_tracks.clone(),
+                        origin: item.origin,
+                        color_space: item.color_space,
+                    },
+                },
+            )?,
+        };
+        Some(clip)
     }
 
     /// Lays a copy of `source` on `track_id` starting at `start` - its
@@ -8047,31 +8219,29 @@ impl Studio {
         start: f64,
         gesture: Option<&str>,
     ) -> Option<String> {
-        if source.kind == model::ClipKind::Text {
-            return self.apply_in(
-                gesture,
-                Command::AddTextClip {
-                    above: false,
-                    track_id: Some(track_id.to_owned()),
-                    start,
-                    style: source.text.clone(),
-                    duration: Some(source.duration),
-                    offset_y: Some(source.offset_y),
-                },
-            );
-        }
-        if source.kind == model::ClipKind::Shape {
-            return self.apply_in(
-                gesture,
-                Command::AddShapeClip {
-                    above: false,
-                    track_id: Some(track_id.to_owned()),
-                    start,
-                    style: source.shape.clone(),
-                    duration: Some(source.duration),
-                    name: source.name.clone(),
-                },
-            );
+        let drawn = match source.kind {
+            model::ClipKind::Text => Some(Command::AddTextClip {
+                above: false,
+                track_id: Some(track_id.to_owned()),
+                start,
+                style: source.text.clone(),
+                duration: Some(source.duration),
+                offset_y: Some(source.offset_y),
+            }),
+            model::ClipKind::Shape => Some(Command::AddShapeClip {
+                above: false,
+                track_id: Some(track_id.to_owned()),
+                start,
+                style: source.shape.clone(),
+                duration: Some(source.duration),
+                name: source.name.clone(),
+            }),
+            _ => None,
+        };
+        if let Some(add) = drawn {
+            let created = self.apply_in(gesture, add)?;
+            self.apply_in(gesture, match_command(source, &created));
+            return Some(created);
         }
         let lane_end = self
             .timeline()
@@ -8248,6 +8418,9 @@ impl Studio {
                     log::info!("{swept} stale proxies swept from {}", project_dir.display());
                 }
                 self.session = Some(session);
+                // The relink dialog belongs to the project that opened it;
+                // this project's own check follows below.
+                self.relink = Default::default();
                 crate::host::next_project_epoch();
                 self.forget_art();
                 self.art_failed.clear();
@@ -8353,6 +8526,46 @@ impl Studio {
         }
     }
 
+    /// Looks for media the open project can no longer find, and opens the
+    /// relink dialog on whatever is missing that the user has not already
+    /// dismissed.
+    ///
+    /// Runs when the window is brought back to the front - the moment a
+    /// person returns from moving a file - since the check
+    /// [`Studio::open_project`] makes cannot see a file that went away
+    /// afterwards: the bin and the timeline keep the item, the preview
+    /// only fails to read it, and nothing else would say why.
+    ///
+    /// Returns whether the dialog changed, so the caller publishes only
+    /// when there is something new to show.
+    pub fn check_missing_media(&mut self) -> bool {
+        if self.on_start || self.session.is_none() {
+            return false;
+        }
+        let missing = self
+            .session
+            .as_ref()
+            .map(|session| session.project().missing_media())
+            .unwrap_or_default();
+        let before: Vec<String> = self
+            .relink
+            .items
+            .iter()
+            .map(|item| item.id.clone())
+            .collect();
+        let was_open = self.relink.open;
+        self.handle(crate::panes::Msg::Relink(
+            crate::panes::relink::RelinkMsg::Recheck(missing),
+        ));
+        let after: Vec<String> = self
+            .relink
+            .items
+            .iter()
+            .map(|item| item.id.clone())
+            .collect();
+        self.relink.open != was_open || before != after
+    }
+
     /// Clears all cached artwork and waveforms from the current project.
     pub fn clear_project_cache(&mut self) {
         let Some(path) = self
@@ -8453,6 +8666,9 @@ impl Studio {
         self.captions.pace = Default::default();
         self.speech.running = false;
         self.speech.pace = Default::default();
+        // No dialog about files the project that just closed could not
+        // find stays up over the launch screen.
+        self.relink = Default::default();
         self.source = None;
         // A take running as the project closes stops, keeping its file;
         // the next project's speakers are not left silent.
@@ -8832,6 +9048,18 @@ impl Studio {
         );
     }
 
+    /// Whether a sheet covers the editor - Export, Settings, the project
+    /// sheet, a relink or a question - so the editor's keys are not its
+    /// own. The tool cards are not sheets: the timeline is worked beside
+    /// them.
+    pub fn sheet_open(&self) -> bool {
+        self.export.open
+            || self.settings.open
+            || self.project_sheet.open
+            || self.relink.open
+            || self.confirm.is_some()
+    }
+
     // ── notices ──
 
     /// Raises the bottom-right notice. Every caller is some other handler
@@ -9056,10 +9284,18 @@ impl Studio {
                     && playhead < clip.start + clip.duration
             })
             .max_by_key(|clip| -self.row_of(&clip.track_id));
-        editor.set_has_picture(showing.is_some());
+        // A picture from the bin on the monitor is shown whatever is under
+        // the timeline's playhead: in a new project there is nothing, and
+        // its frame was decoded and then hidden (#464).
+        let source = self
+            .source
+            .as_ref()
+            .filter(|source| source.kind != model::MediaKind::Audio);
+        editor.set_has_picture(source.is_some() || showing.is_some());
         editor.set_preview_clip_name(
-            showing
-                .map(|clip| clip.name.as_str())
+            source
+                .map(|source| source.name.as_str())
+                .or(showing.map(|clip| clip.name.as_str()))
                 .unwrap_or_default()
                 .into(),
         );
@@ -9120,6 +9356,7 @@ impl Studio {
                 .and_then(|id| self.clip(&id))
                 .map_or(0.0, |clip| place_in(clip, self.playhead) as f32),
         );
+        self.publish_speed_ramp(app, models);
         let rows = self.key_rows();
         keys.set_available(!rows.is_empty());
         sync(&models.key_rows, rows);
@@ -9166,7 +9403,7 @@ impl Studio {
         editor.set_frame_rate(self.frame_rate());
         editor.set_tool(self.lanes.tool);
         editor.set_snap(self.lanes.snap);
-        editor.set_magnetic(self.prefs.magnetic);
+        editor.set_magnetic(self.prefs.magnetic());
         editor.set_trim_follow(self.prefs.trim_follow);
         editor.set_meters_shown(self.prefs.meters_shown());
         editor.set_preview_axis(self.prefs.preview_axis);
@@ -9432,6 +9669,44 @@ impl Studio {
     /// Outside is not clamped to an end: a key put on from outside the clip
     /// would land on its first or last frame, which is never what the person
     /// pressing the diamond meant.
+    /// The Speed tab's curve for the selected clip: its points on the
+    /// graph's scale, the line through them, whether it bends, which preset
+    /// it still is, where the playhead crosses it, and its two extremes.
+    fn publish_speed_ramp(&self, app: &App, models: &Models) {
+        let ramp = app.global::<SpeedRamp>();
+        if models.speed_presets.row_count() == 0 {
+            sync(
+                &models.speed_presets,
+                speed_ramp::preset_names()
+                    .into_iter()
+                    .map(SharedString::from)
+                    .collect(),
+            );
+        }
+        let clip = self.sole_selection().and_then(|id| self.clip(&id));
+        let curve = clip.and_then(|clip| clip.speed_curve.as_deref());
+        let points = curve.unwrap_or_default();
+        sync(
+            &models.speed_points,
+            points
+                .iter()
+                .enumerate()
+                .map(|(index, point)| CurvePointData {
+                    index: index as i32,
+                    x: point.at as f32,
+                    y: speed_ramp::height_of(point.speed) as f32,
+                })
+                .collect(),
+        );
+        ramp.set_curved(curve.is_some());
+        ramp.set_smooth(curve.is_none_or(concat_project::speed::is_smooth));
+        ramp.set_path(speed_ramp::path(points).into());
+        ramp.set_preset(curve.map_or(-1, speed_ramp::preset_index));
+        ramp.set_at(self.key_point().map_or(-1.0, |(_, at)| at as f32));
+        ramp.set_fastest(speed_ramp::extreme(points, true).map_or(-1.0, |speed| speed as f32));
+        ramp.set_slowest(speed_ramp::extreme(points, false).map_or(-1.0, |speed| speed as f32));
+    }
+
     pub fn key_point(&self) -> Option<(&Clip, f64)> {
         let clip = self.sole_selection().and_then(|id| self.clip(&id))?;
         if clip.duration <= 0.0 {
@@ -11252,7 +11527,7 @@ impl Studio {
             ),
             action(
                 "freeze",
-                "Freeze frame".into(),
+                t("studio.freezeFrame"),
                 Glyph::Frame,
                 &keymap::label(&self.prefs, "freeze"),
                 straddled
@@ -11694,7 +11969,7 @@ impl Studio {
                     enabled: true,
                     danger: false,
                     checkable: true,
-                    checked: self.prefs.magnetic,
+                    checked: self.prefs.magnetic(),
                 },
             ],
             2 => vec![
@@ -11713,9 +11988,9 @@ impl Studio {
                     true,
                 ),
                 rule(),
-                check("sort-added", "Sort by: Added", self.media.sort == 0),
-                check("sort-name", "Sort by: Name", self.media.sort == 1),
-                check("sort-kind", "Sort by: Type", self.media.sort == 2),
+                check("sort-added", &t("studio.sortAdded"), self.media.sort == 0),
+                check("sort-name", &t("studio.sortName"), self.media.sort == 1),
+                check("sort-kind", &t("studio.sortType"), self.media.sort == 2),
                 rule(),
                 row(
                     "start",
@@ -12105,8 +12380,15 @@ impl Studio {
             // A clip that is part of the selection takes the selection with
             // it: Delete on one of five selected clips means the five.
             "delete" | "ripple-delete" => {
-                let ripple = action == "ripple-delete" || self.prefs.magnetic;
-                if self.selection.len() > 1 && self.selection.iter().any(|held| held == id) {
+                let whole =
+                    self.selection.len() > 1 && self.selection.iter().any(|held| held == id);
+                let ripple = action == "ripple-delete"
+                    || if whole {
+                        self.closes_gap(&self.selection)
+                    } else {
+                        self.closes_gap(&[id.to_owned()])
+                    };
+                if whole {
                     self.remove_selected(ripple);
                 } else {
                     self.apply(Command::RemoveClips {
@@ -12275,6 +12557,7 @@ mod tests {
         let held = |row: usize, start: f64| super::Held {
             row,
             clip: Clip::blank("c", "t", ClipKind::Video, "c", start, 1.0),
+            media: None,
         };
         let group = [held(1, 4.0), held(2, 5.5), held(0, 9.0)];
         let none = |_: usize| false;
@@ -12351,6 +12634,7 @@ mod tests {
                 &mut editor,
                 Command::SetClipSpeed {
                     clip_id: whole.clone(),
+                    ripple: false,
                     speed,
                 },
             );
@@ -12764,7 +13048,7 @@ mod tests {
             let before = document.active().clip(id).expect("clip");
             let mut after = before.clone();
             crate::batch_volume::set_level(&mut after, before, 0.5, 0.0);
-            commands.extend(super::clip_commands(id, before, &after));
+            commands.extend(super::clip_commands(id, before, &after, false));
         }
         editor.apply(Command::Batch { commands }).expect("applies");
         let clip = |editor: &concat_project::Editor, id: &str| {

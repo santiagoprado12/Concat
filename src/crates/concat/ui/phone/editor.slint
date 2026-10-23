@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
+// SPDX-FileCopyrightText: 2026 Jareer Abdullah and Concat contributors
 
 import { I18n } from "../i18n.slint";
 import { Theme } from "../theme/theme.slint";
@@ -748,6 +748,7 @@ export component PhoneEditor inherits Rectangle {
                 finger-held => { Editor.finger-held(); }
                 finger-lifted => { Editor.finger-lifted(); }
                 key-mark-moved(from, to) => { Editor.key-mark-moved(from, to); }
+                key-mark-opened => { Editor.key-mark-opened(); }
                 hovered(seconds) => { Editor.hovered(seconds); }
                 hover-ended => { Editor.hover-ended(); }
                 floor-pressed => { Editor.blur(); }

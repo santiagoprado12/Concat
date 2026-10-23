@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
+// SPDX-FileCopyrightText: 2026 Jareer Abdullah and Concat contributors
 
 //! The export sheet: the form, the running render, and the result.
 //!
@@ -544,9 +544,9 @@ impl ExportPane {
                 format!("{}:{:02}", whole / 60, whole % 60).into()
             },
             contents: if titles > 0 {
-                format!("{clips} clips · {titles} titles")
+                tf("export.contentsClipsTitles", &[&clips, &titles])
             } else {
-                format!("{clips} clips")
+                tf("export.contentsClips", &[&clips])
             }
             .into(),
             resolution: self.resolution as i32,

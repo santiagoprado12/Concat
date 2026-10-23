@@ -20,6 +20,15 @@ import json
 from pathlib import Path
 
 
+def map_time(t: float, knots: list) -> float:
+    """Move a time from the reference timeline to the tightened one (see tighten_segments.py)."""
+    for k in knots:
+        if t <= k["e1"] + 1e-9:
+            u = min(max(t - k["e0"], 0.0), k["e1"] - k["e0"])
+            return k["ns"] + min(max(u - k["head_adj"], 0.0), k["nd"])
+    return knots[-1]["ns"] + knots[-1]["nd"]
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--raw", required=True)
@@ -32,8 +41,13 @@ def main() -> None:
     ap.add_argument("--placeholders", type=Path)
     ap.add_argument("--captions", type=Path)
     ap.add_argument("--titles", type=Path)
+    ap.add_argument("--sfx", type=Path, help='[{"file": "/abs/slide_in.wav", "start": 4.1, "volume": 0.6, "lane": "A"}, ...]; '
+                    "each lane gets its own audio track so effects never overlap on one")
     ap.add_argument("--preview", default="", help="comma separated times to render as PNGs next to the project")
     ap.add_argument("--export", help="mp4 path to export, under the home folder")
+    ap.add_argument("--remap", action="store_true",
+                    help="--alignment is a tighten_segments.py output: move captions, titles, placeholders and "
+                         "previews (written against the reference timeline) with the tightened cuts")
     ap.add_argument("--out", type=Path, required=True)
     a = ap.parse_args()
 
@@ -46,7 +60,10 @@ def main() -> None:
         {"tool": "media_import", "args": {"path": proj, "file": a.raw}, "as": "raw"},
     ]
 
-    segs = json.loads(a.alignment.read_text())["segments"]
+    aligned = json.loads(a.alignment.read_text())
+    segs = aligned["segments"]
+    knots = aligned.get("timemap") if a.remap else None
+    mt = (lambda t: round(map_time(t, knots), 3)) if knots else (lambda t: t)
     for i, s in enumerate(segs):
         dur = s["edited_end"] - s["edited_start"]
         tail = a.raw_duration - s["raw_start"] - dur
@@ -64,7 +81,10 @@ def main() -> None:
 
     if a.placeholders:
         for i, p in enumerate(json.loads(a.placeholders.read_text())):
+            p = {**p, "start": mt(p["start"]), "end": mt(p["end"])}
             dur = p["end"] - p["start"]
+            if dur < 0.05:
+                continue
             m, c = f"ph{i}", f"phc{i}"
             steps += [
                 {"tool": "media_import", "args": {"path": proj, "file": p["png"]}, "as": m},
@@ -74,9 +94,26 @@ def main() -> None:
                                                "delta": -round(5.0 - dur, 3)}},
             ]
 
+    if a.sfx:
+        items = json.loads(a.sfx.read_text())
+        files = sorted({i["file"] for i in items})
+        for k, f in enumerate(files):
+            steps.append({"tool": "media_import", "args": {"path": proj, "file": f}, "as": f"sfxm{k}"})
+        lanes = sorted({i.get("lane", "A") for i in items})
+        for ln in lanes:
+            steps.append({"tool": "track_add", "args": {"path": proj, "bottom": True}, "as": f"sfxlane{ln}"})
+        for n, i in enumerate(items):
+            steps.append({"tool": "clip_add", "args": {"path": proj, "mediaId": f"$sfxm{files.index(i['file'])}.createdId",
+                                                       "trackId": f"$sfxlane{i.get('lane', 'A')}.createdId",
+                                                       "start": max(0.0, mt(i["start"]))}, "as": f"sfxc{n}"})
+            steps.append({"tool": "clip_update", "args": {"path": proj, "clipId": f"$sfxc{n}.createdId",
+                                                          "patch": {"volume": i.get("volume", 0.6)}}})
+
     if a.captions:
         cap = json.loads(a.captions.read_text())
-        args = {"path": proj, "captions": cap["captions"]}
+        caps = [{**c, "start": mt(c["start"]), "end": mt(c["end"])} for c in cap["captions"]]
+        caps = [c for c in caps if c["end"] - c["start"] >= 0.15]
+        args = {"path": proj, "captions": caps}
         for k in ("offsetY", "style"):
             if k in cap:
                 args[k] = cap[k]
@@ -84,12 +121,13 @@ def main() -> None:
 
     if a.titles:
         for t in json.loads(a.titles.read_text()):
+            t = {**t, "start": mt(t["start"]), "duration": round(mt(t["start"] + t["duration"]) - mt(t["start"]), 3)}
             steps.append({"tool": "title_add", "args": {"path": proj, "above": True, **t}})
 
     steps.append({"tool": "project_save", "args": {"path": proj}})
     for t in [x for x in a.preview.split(",") if x]:
-        steps.append({"tool": "preview_frame", "args": {"path": proj, "time": float(t), "width": w // 2, "height": h // 2,
-                                                        "output": f"{loc}/preview_{float(t):.1f}.png"}})
+        steps.append({"tool": "preview_frame", "args": {"path": proj, "time": mt(float(t)), "width": w // 2, "height": h // 2,
+                                                        "output": f"{loc}/preview_{mt(float(t)):.1f}.png"}})
     if a.export:
         steps += [{"tool": "export_start", "args": {"path": proj, "output": str(Path(a.export).expanduser())}, "as": "ex"},
                   {"tool": "export_wait", "args": {"job": "$ex.job", "timeoutSeconds": 600}}]

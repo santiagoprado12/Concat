@@ -66,6 +66,10 @@ It compares log-mel features of the edited audio with the raw audio in 1 s windo
 
 The audio cuts and the picture cuts of an edit are **independent**: B-roll is laid over a voice track that keeps going. Rebuild the voice from the segments, then cover the `other` shots with whatever footage belongs there.
 
+## Tidying the cut points
+
+`tighten_segments.py RAW audio_alignment.json --out tight.json` measures, per segment, the silence before the voice and after it (voice = within 14 dB of the speaking level). It trims head silence over 0.12 s down to a 0.08 s lead-in, extends the head earlier by up to 0.08 s when the voice starts within 40 ms of the cut (so the first syllable is not clipped), and shortens tails over 0.25 s to 0.15 s. Output is the same shape as `audio_alignment.json` plus a `timemap` that moves anything timed against the reference (captions, titles, placeholders, effects) onto the new cuts. On the first real pair the replica went from 56.7 s to 53.1 s and the awkward "not ready yet" starts disappeared. This changes the edit relative to the reference on purpose; say so.
+
 ## Transcript, with word timings
 
 Concat's own transcriber is not reachable from the MCP or the CLI, so use whisper.cpp with the **same ggml model file Concat uses** (so one download serves both). `brew install whisper-cpp` gives `whisper-cli`. Model files live in Concat's data folder (`~/Library/Application Support/app.concat.editor/whisper-models/ggml-<id>.bin`; ids, sizes and SHA-256 are in `src/crates/concat-speech/src/transcribe.rs`). Ask before downloading one. Then:

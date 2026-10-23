@@ -2,6 +2,13 @@
 
 Newest first. Each entry says how it was found. Verified = run against the real app (Concat 0.2.8, macOS, debug build, headless MCP).
 
+## 2026-10-23 (later): natural starts and sound effects
+
+- **Complaint:** some clips opened on her looking away or not ready to speak. The replica was frame-identical to the reference at every cut, so the cause was the reference's cut points, which sit inside pauses (measured lead-in before the voice: mean 0.20 s, up to 0.95 s; six segments under 0.04 s, which clips the first syllable). Fix: `tighten_segments.py` (see `analyze-reference-video`).
+- **Effects:** two CC0 sets (see `sfx-sources.md`), a palette with `make_sfx_pack.py`, 21 effects placed with `build_steps.py --sfx` on two audio lanes. 201 steps, 0 failures. The raw swishes (0.07-0.2 s) had to be slowed and echoed to work as a slide.
+- **Verified:** a lane created with `track_add bottom: true` gets a lowercase id (`t4`); use the returned `createdId`, not a guessed `T5`.
+- **Verified:** correlating a noisy effect against the final mix, and the swell detector, both failed to find effects mixed under speech (they are really there: an isolated project with one effect shows it at the right second). Do not use those checks for effects under a voice.
+
 ## 2026-10-23: first real pair (a 4-minute talking-head recording and its 57-second vertical reel)
 
 - **What the pair was:** the raw file was one continuous take of a person talking (plus a trailing editor end card); the edit was jump cuts of that take with B-roll, app screenshots and image cards laid over the continuing voice, phrase-by-phrase captions, and a few typed titles. The B-roll was **not** in the raw file, so the replica rebuilds the voice track and the captions exactly and puts labelled placeholders where the other footage goes.

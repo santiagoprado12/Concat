@@ -5,7 +5,7 @@ description: Rebuild an edit in Concat through its MCP server - lay the user's r
 
 # Replicating an edit in Concat
 
-Companion skills: `analyze-reference-video` (turns videos into evidence), `distill-editing-style` (turns evidence into a profile). **Read `references/learnings.md` before starting and add to it after every session** - it holds what has been verified against the real app and is the main way this skill improves.
+Order of work: `propose-edit-plan` (canvas the user approves) -> `analyze-reference-video` -> `distill-editing-style` -> this skill. Companion skills: `analyze-reference-video` (turns videos into evidence), `distill-editing-style` (turns evidence into a profile). **Read `references/learnings.md` before starting and add to it after every session** - it holds what has been verified against the real app and is the main way this skill improves.
 
 ## Connect to Concat
 

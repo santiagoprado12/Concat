@@ -48,6 +48,8 @@ Write `style.json` and a short `style.md` next to the analysis (under `~/concat-
 
 ## Rules of thumb
 
+- A style already learned from the user's earlier reels is in `propose-edit-plan/references/house-style.md`; start from it and record only what differs.
+
 - Fewer, truer rules beat many speculative ones. A rule with `coverage` under about 0.3 is a flourish, not a style.
 - Do not claim a sound is a specific recording ("the Vine boom"); say "low impact, decay about 1 s".
 - If the analysis disagrees with what the frames show, trust the frames and re-run the analysis with different thresholds rather than papering over it.

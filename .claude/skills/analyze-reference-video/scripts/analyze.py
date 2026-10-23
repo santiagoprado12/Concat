@@ -304,6 +304,14 @@ def cmd_sfx(video: Path, out: Path, min_db: float) -> dict:
     freqs = librosa.fft_frequencies(sr=SR, n_fft=2048)
     times = librosa.frames_to_time(np.arange(S.shape[1]), sr=SR, hop_length=HOP)
     events: list[dict] = []
+    # voiced speech: strong harmonic structure in the voice band while that band is active
+    Sh = np.abs(librosa.stft(harm, n_fft=2048, hop_length=HOP))
+    vb = (freqs >= 200) & (freqs < 3500)
+    v_all, v_h = (S[vb] ** 2).sum(axis=0) + 1e-12, (Sh[vb] ** 2).sum(axis=0)
+    k5 = np.ones(5) / 5
+    speech = (np.convolve(v_h / v_all, k5, mode="same") > 0.6) & (np.convolve(to_db(np.sqrt(v_all)), k5, mode="same")
+                                                               > np.median(to_db(np.sqrt(v_all))) - 6)
+    speech = np.convolve(speech.astype(float), np.ones(9) / 9, mode="same") > 0.3  # close small holes
 
     # 1) hits: sharp onsets on the percussive stem
     oenv = librosa.onset.onset_strength(S=librosa.amplitude_to_db(Sp), sr=SR, hop_length=HOP)
@@ -332,7 +340,7 @@ def cmd_sfx(video: Path, out: Path, min_db: float) -> dict:
     pre_a, pre_b = int(0.20 * SR / HOP), max(1, int(0.04 * SR / HOP))
     last = -999
     for f in range(pre_a + 1, len(lo) - 1):
-        base = float(lo[f - pre_a:f - pre_b].min())
+        base = max(float(lo[f - pre_a:f - pre_b].min()), float(np.median(lo)) - 12)
         if lo[f] - base < 12 or lo[f] < lo[f - 1] or lo[f] < lo[f + 1] or f - last < int(0.08 * SR / HOP):
             continue
         last = f
@@ -383,6 +391,12 @@ def cmd_sfx(video: Path, out: Path, min_db: float) -> dict:
         f0 = f1
 
     events.sort(key=lambda e: e["time"])
+    silences = read_json(out / "audio.json").get("silences", [])
+    for e in events:
+        e["after_silence"] = any(0 <= e["time"] - end <= 0.15 for _, end in silences)
+        f = int(np.clip(e["time"] * SR / HOP, 0, len(speech) - 1))
+        f0, f1 = (int(e["start"] * SR / HOP), int(e["end"] * SR / HOP)) if "start" in e else (f - 2, f + 2)
+        e["in_speech"] = bool(speech[max(f0, 0):max(f1, f0 + 1) + 1].mean() > 0.5)
     # 3) music grid
     tempo, beats = librosa.beat.beat_track(y=harm + perc, sr=SR, hop_length=HOP)
     tempo = float(np.atleast_1d(tempo)[0])
@@ -393,6 +407,7 @@ def cmd_sfx(video: Path, out: Path, min_db: float) -> dict:
         "has_audio": True,
         "caveat": ("Heuristic detectors on the mixed track. Speech and music mask effects; labels are guesses. "
                    "Confirm important events on the spectrogram image and by what the frame shows at that time."),
+        "speech_fraction": round(float(speech.mean()), 2),
         "events": events,
         "music": {"bpm": round(tempo, 1), "beat_regularity": round(max(regular, 0), 2),
                   "beats": [round(float(b), 3) for b in beat_t]},
@@ -417,8 +432,12 @@ def cmd_report(out: Path) -> dict:
     probe, shots = read_json(out / "probe.json"), read_json(out / "shots.json")
     audio, sfx = read_json(out / "audio.json"), read_json(out / "sfx.json")
     cuts = [b["time"] for b in shots.get("boundaries", [])]
-    events = sfx.get("events", [])
-    corr: dict = {}
+    all_events = sfx.get("events", [])
+    swell = ("whoosh_swell", "riser")  # noise-like by nature, so a tonal bed or voice does not disqualify them
+    events = [e for e in all_events if (not e.get("in_speech") or e["label"] in swell) and not e.get("after_silence")
+              and e.get("strength_db", 0) >= 20]
+    corr: dict = {"events_total": len(all_events), "events_plausibly_placed": len(events),
+                  "speech_fraction": sfx.get("speech_fraction")}
     if cuts and events:
         # event time minus cut time, for events within 0.6 s of a cut
         # offsets are event minus cut: negative = the sound leads the cut. Swells also report their end.
@@ -439,8 +458,14 @@ def cmd_report(out: Path) -> dict:
                                              (e.get("start", 9e9) - 0.2 <= c <= e.get("end", -1) + 0.2)
                                              for e in events))
         corr["fraction_of_cuts_with_sfx"] = round(covered / len(cuts), 2)
+    consistent = [l for l, v in corr.get("sfx_near_cuts", {}).items() if v["count"] >= 3 and v["spread_s"] <= 0.08]
+    corr["sfx_verdict"] = (
+        "placed effects likely: " + ", ".join(consistent) if consistent else
+        "no consistent effect-on-cut pattern; on a speech-heavy track the detected hits are mostly voice "
+        "- check the spectrogram before claiming any sound design" if (sfx.get("speech_fraction") or 0) > 0.3 else
+        "no consistent effect-on-cut pattern found")
     beats = sfx.get("music", {}).get("beats", [])
-    for e in events:  # an impact that is not on the beat grid is far more likely to be a placed effect
+    for e in all_events:  # an impact that is not on the beat grid is far more likely to be a placed effect
         e["on_beat"] = bool(beats) and nearest(e["time"], beats)[0] <= 0.05
     if cuts and beats:
         d = [nearest(c, beats)[0] for c in cuts]
@@ -449,7 +474,7 @@ def cmd_report(out: Path) -> dict:
     report = {"probe": probe, "pacing": shots.get("stats", {}), "boundaries": shots.get("boundaries", []),
               "loudness": {k: audio.get(k) for k in ("integrated_lufs", "lra", "true_peak_db")},
               "silences": audio.get("silences", []),
-              "sfx_events": events, "music": {k: v for k, v in sfx.get("music", {}).items() if k != "beats"},
+              "sfx_events": all_events, "music": {k: v for k, v in sfx.get("music", {}).items() if k != "beats"},
               "correlations": corr, "caveat": sfx.get("caveat", "")}
     write_json(out / "style-report.json", report)
     lines = [f"# Style report: {Path(probe.get('file', '?')).name}", "",
@@ -457,8 +482,10 @@ def cmd_report(out: Path) -> dict:
              "## Pacing", json.dumps(report["pacing"]), "", "## Loudness", json.dumps(report["loudness"]), "",
              "## Music", json.dumps(report["music"]), "", "## SFX / cut correlations", json.dumps(corr, indent=1), "",
              f"## SFX events ({len(events)})"]
+    lines[-1] = (f"## Plausibly placed SFX ({len(events)} of {len(all_events)} detected; the rest are inside voiced speech, "
+                 f"start a phrase after silence, or are weak: mostly voice, not effects)")
     for e in events[:80]:
-        lines.append(f"- {e['time']:.2f}s {e['label']} ({e.get('strength_db')} dB)")
+        lines.append(f"- {e['time']:.2f}s {e['label']} ({e.get('strength_db')} dB){' on-beat' if e.get('on_beat') else ''}")
     if len(events) > 80:
         lines.append(f"- ... {len(events) - 80} more in style-report.json")
     (out / "style-report.md").write_text("\n".join(lines))

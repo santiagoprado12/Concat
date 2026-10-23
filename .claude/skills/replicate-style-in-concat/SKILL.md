@@ -29,7 +29,7 @@ Constraints that bite:
 
 ## Lane convention (verified)
 
-New projects have lanes `T1..T4`. **A higher lane number is drawn above a lower one**, even though `timeline_read` lists lanes "top to bottom". A title on `T1` is hidden behind video on `T2`. Convention to use: footage on `T1`, titles on `T2` and up, sound effects and music on the lanes above those (audio does not need to be last). After `title_add`, check the `track` in the result and move it with `clips_move` if it is below the footage, then confirm with `preview_frame`. Add lanes with `track_add` (`bottom: true` for under everything).
+New projects have lanes `T1..T4`. **A higher lane number is drawn above a lower one**, even though `timeline_read` lists lanes "top to bottom". A title on `T1` is hidden behind video on `T2`. Convention to use: footage on `T1`, other picture layers (B-roll, placeholders) on `T2`, and **pass `above: true` to `title_add`**: it puts the title on the first free lane above everything occupied over its span (minting a lane if needed). `captions_add` does this by itself. Without `above`, `title_add` takes the first free lane from the bottom, which can be *behind* the footage. After adding, check the `track` in the result and confirm with `preview_frame`. Add lanes with `track_add` (`bottom: true` for under everything).
 
 ## Recipes (all verified in the app)
 
@@ -62,11 +62,13 @@ New projects have lanes `T1..T4`. **A higher lane number is drawn above a lower 
 
 ## Workflow for "copy this edit onto my raw footage"
 
-1. `analyze-reference-video` on the edited and raw videos, then `align.py` for the shot map. `distill-editing-style` for the profile.
-2. Write `steps.json`: project, imports, shots (recipe above, from `alignment.json`), transitions, titles, SFX, music, save, preview of 3-5 key moments, export.
-3. Run it, open the preview frames, fix, re-run (recreate the project folder or use a new name; `project_create` refuses an existing project).
-4. Export, run `analyze.py all` on the export and `compare.py` against the reference.
-5. Report plainly: what matches, what is approximate, what Concat could not do. Then update `references/learnings.md` and, if a recipe changed, this file.
+1. `analyze-reference-video` on the edited and raw videos, then the right aligner (`align.py` for varied footage, `align_audio.py` for a talking head or when the voice survives). `distill-editing-style` for the profile.
+2. Write `steps.json`. For a voice-led reel `scripts/build_steps.py` does it from `audio_alignment.json`: one raw clip per aligned segment on `T1` (recipe above), placeholder images on `T2`, `captions_add`, `title_add above`, save, previews, export. Inputs it takes: `captions.json` (`{offsetY, style, captions: [{start,end,text}]}`), `titles.json`, `placeholders.json`.
+3. **Footage that the user has not supplied** (B-roll, screenshots, icons): do not invent it and do not reuse pieces of the reference, whose pictures carry its burned-in captions. `scripts/make_placeholders.py` renders a labelled image per slot (kind, what goes there, the time slot) and `build_steps.py` lays them on `T2` at the right times, so the user can replace each clip in the window and the timing stays.
+4. Run `python3 -I scripts/mcp_run.py --bin <concat> steps.json`, open the preview frames with Read, fix, re-run (use a new project name or delete the folder; `project_create` refuses an existing project). Close any process that has the project open first (lock).
+5. Export, run `analyze.py all` on the export and `compare.py` against the reference.
+6. **Open the project for the user**: `<concat> --project <project folder>` (the same binary; in the desktop app session run it in the background). The MCP run must have ended, because the lock refuses a project open elsewhere. The app creates the bin thumbnails itself, so it logs harmless "Error loading image ... .thumb.jpg" lines on first open.
+7. Report plainly: what matches, what is approximate, what Concat could not do, and which captions or words were guesses. Then update `references/learnings.md` and, if a recipe changed, this file.
 
 ## Honest limits to state to the user
 

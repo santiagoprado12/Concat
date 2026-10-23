@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+"""Turn an audio alignment into a mcp_run.py steps file that rebuilds the edit in Concat.
+
+  python3 -I build_steps.py --raw RAW.mp4 --raw-duration 243.73 --alignment audio_alignment.json \
+      --location ~/concat-analysis/job --name project --size 1080x1920 --fps 30 \
+      [--placeholders PLACEHOLDERS.json] [--captions captions.json] [--titles titles.json] \
+      [--export out.mp4] [--preview 3.0,17.5] --out steps.json
+
+Layout built (lane numbers are what Concat's `title_add above` and captions_add put above the rest):
+  T1  the raw recording, one clip per aligned segment (picture and voice), laid back to back
+  T2  placeholder images for shots whose picture is not in the raw footage
+  above  captions and titles
+PLACEHOLDERS.json: [{"png": "/abs/placeholder_01.png", "start": 1.37, "end": 2.07}, ...]
+captions.json: {"offsetY": 0.28, "style": {...title style...}, "captions": [{"start","end","text"}, ...]}
+titles.json: [{"start": 17.9, "duration": 1.9, "offsetY": -0.28, "style": {"content": "...", ...}}, ...]
+All output paths must be under the home folder (the MCP server refuses to write elsewhere).
+"""
+import argparse
+import json
+from pathlib import Path
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--raw", required=True)
+    ap.add_argument("--raw-duration", type=float, required=True, help="length of the raw file in seconds")
+    ap.add_argument("--alignment", type=Path, required=True)
+    ap.add_argument("--location", required=True, help="existing folder; the project is created inside it")
+    ap.add_argument("--name", default="project")
+    ap.add_argument("--size", default="1080x1920")
+    ap.add_argument("--fps", type=int, default=30)
+    ap.add_argument("--placeholders", type=Path)
+    ap.add_argument("--captions", type=Path)
+    ap.add_argument("--titles", type=Path)
+    ap.add_argument("--preview", default="", help="comma separated times to render as PNGs next to the project")
+    ap.add_argument("--export", help="mp4 path to export, under the home folder")
+    ap.add_argument("--out", type=Path, required=True)
+    a = ap.parse_args()
+
+    loc = str(Path(a.location).expanduser())
+    proj = f"{loc}/{a.name}"
+    w, h = map(int, a.size.split("x"))
+    steps: list[dict] = [
+        {"tool": "project_create", "args": {"location": loc, "name": a.name,
+                                            "video": {"width": w, "height": h, "rateNum": a.fps, "rateDen": 1}}},
+        {"tool": "media_import", "args": {"path": proj, "file": a.raw}, "as": "raw"},
+    ]
+
+    segs = json.loads(a.alignment.read_text())["segments"]
+    for i, s in enumerate(segs):
+        dur = s["edited_end"] - s["edited_start"]
+        tail = a.raw_duration - s["raw_start"] - dur
+        cid = f"seg{i}"
+        steps += [
+            {"tool": "clip_add", "args": {"path": proj, "mediaId": "$raw.createdId", "trackId": "T1",
+                                          "start": round(s["edited_start"], 3)}, "as": cid},
+            {"tool": "clip_trim", "args": {"path": proj, "clipId": f"${cid}.createdId", "edge": "start",
+                                           "delta": round(s["raw_start"], 3)}},
+            {"tool": "clip_trim", "args": {"path": proj, "clipId": f"${cid}.createdId", "edge": "end",
+                                           "delta": -round(tail, 3)}},
+            {"tool": "clips_move", "args": {"path": proj, "moves": [
+                {"clipId": f"${cid}.createdId", "start": round(s["edited_start"], 3), "trackId": "T1"}]}},
+        ]
+
+    if a.placeholders:
+        for i, p in enumerate(json.loads(a.placeholders.read_text())):
+            dur = p["end"] - p["start"]
+            m, c = f"ph{i}", f"phc{i}"
+            steps += [
+                {"tool": "media_import", "args": {"path": proj, "file": p["png"]}, "as": m},
+                {"tool": "clip_add", "args": {"path": proj, "mediaId": f"${m}.createdId", "trackId": "T2",
+                                              "start": round(p["start"], 3)}, "as": c},
+                {"tool": "clip_trim", "args": {"path": proj, "clipId": f"${c}.createdId", "edge": "end",
+                                               "delta": -round(5.0 - dur, 3)}},
+            ]
+
+    if a.captions:
+        cap = json.loads(a.captions.read_text())
+        args = {"path": proj, "captions": cap["captions"]}
+        for k in ("offsetY", "style"):
+            if k in cap:
+                args[k] = cap[k]
+        steps.append({"tool": "captions_add", "args": args})
+
+    if a.titles:
+        for t in json.loads(a.titles.read_text()):
+            steps.append({"tool": "title_add", "args": {"path": proj, "above": True, **t}})
+
+    steps.append({"tool": "project_save", "args": {"path": proj}})
+    for t in [x for x in a.preview.split(",") if x]:
+        steps.append({"tool": "preview_frame", "args": {"path": proj, "time": float(t), "width": w // 2, "height": h // 2,
+                                                        "output": f"{loc}/preview_{float(t):.1f}.png"}})
+    if a.export:
+        steps += [{"tool": "export_start", "args": {"path": proj, "output": str(Path(a.export).expanduser())}, "as": "ex"},
+                  {"tool": "export_wait", "args": {"job": "$ex.job", "timeoutSeconds": 600}}]
+    steps.append({"tool": "timeline_read", "args": {"path": proj}})
+    a.out.write_text(json.dumps(steps, indent=1))
+    print(f"{len(steps)} steps -> {a.out}")
+
+
+if __name__ == "__main__":
+    main()

@@ -66,6 +66,16 @@ It compares log-mel features of the edited audio with the raw audio in 1 s windo
 
 The audio cuts and the picture cuts of an edit are **independent**: B-roll is laid over a voice track that keeps going. Rebuild the voice from the segments, then cover the `other` shots with whatever footage belongs there.
 
+## Raw footage with retakes (no reference video)
+
+One person talking for minutes, each line recorded 2 to 5 times. **Do not trust Whisper's word timestamps here**: on a 5-minute file they drifted by up to 5 s and many words shared a single time (verified: "Sexto" was reported at 195 s, the voice was at 190 s). Use `phrases.py` instead:
+
+```bash
+uv run $S/phrases.py RAW.mov --model <ggml-base.bin> --lang es --out ~/concat-analysis/<name>/speech
+```
+
+It finds the voiced regions by energy (exact), groups them into phrases (pause over 0.45 s), cuts each phrase out and transcribes it alone, so every phrase has exact times and its own text. `vad.json` feeds `takes_to_plan.py`. Pick the take of each line from that list: usually the last complete one; a transcript that matches the intended sentence cleanly beats a later take that Whisper hears as garbled; a very short phrase right before a longer one is a false start; a take split in two by a pause (`Séptimo` ... `cuando vayas...`) is worse than one continuous region. Whisper still misreads names and jargon: write the correct caption text yourself and keep a list of the guesses. You cannot hear the takes, so tell the user which were chosen by transcript and ask them to spot-check.
+
 ## Tidying the cut points
 
 `tighten_segments.py RAW audio_alignment.json --out tight.json` measures, per segment, the silence before the voice and after it (voice = within 14 dB of the speaking level). It trims head silence over 0.12 s down to a 0.08 s lead-in, extends the head earlier by up to 0.08 s when the voice starts within 40 ms of the cut (so the first syllable is not clipped), and shortens tails over 0.25 s to 0.15 s. Output is the same shape as `audio_alignment.json` plus a `timemap` that moves anything timed against the reference (captions, titles, placeholders, effects) onto the new cuts. On the first real pair the replica went from 56.7 s to 53.1 s and the awkward "not ready yet" starts disappeared. This changes the edit relative to the reference on purpose; say so.

@@ -2,6 +2,17 @@
 
 Newest first. Each entry says how it was found. Verified = run against the real app (Concat 0.2.8, macOS, debug build, headless MCP).
 
+## 2026-10-23 (third): a 5-minute raw take of one person, no reference video
+
+- **Raw shape:** one fixed shot, 301.9 s, 44 spoken takes for about 21 lines (each line 2 to 5 times), a CapCut end card in the last 2 s. Finished edit: 64.5 s from 21 chosen takes, 25 clips.
+- **Whisper word timestamps drift on long files** (several seconds, many words on one time). Energy-based phrase detection plus a per-phrase transcript fixed it: `phrases.py`.
+- **The old per-take loop is replaced by `takes_to_plan.py`**: describe the edit by what is said and let anchors place everything; 0 manual timestamps.
+- **Verified in the app:** keyframes on `scale`, `opacity` and `offsetY` work through `keyframe_set`; `clip_update` with `filters: [{"id": "concat.loudness", "params": {"target": -16}}]` normalises a clip (export measured -16.1 LUFS); `clip_update` with `fadeIn`/`fadeOut`/`volume` shapes the music; `clip_transform` places and scales an overlay icon; `title_add` with `fontFamily` "Montserrat" and "DM Serif Display" renders in those fonts; a title `background` with `backgroundPaddingX/Y/Radius` makes a label chip.
+- **Gotcha:** `tracking` is not a small em fraction: 0.06 spread the letters of a chip across three lines. Leave it at 0 (or well under 0.02).
+- **Gotcha:** two title clips on the same screen position for 0.6 s looked like one garbled title. The typed title of the next line must start after the previous one ends; shorten `dur`.
+- **Gotcha:** an overlay icon placed at the face height (`offsetY` -0.10) covers the speaker; keep icons in the top band (-0.28 to -0.30) or just above the caption (+0.17).
+- **Music:** a 43 MB CC0 ambient piece at gain 0.10; the export's LRA fell to 2 LU and the integrated loudness stayed -16.1. See `sfx-sources.md`.
+
 ## 2026-10-23 (later): natural starts and sound effects
 
 - **Complaint:** some clips opened on her looking away or not ready to speak. The replica was frame-identical to the reference at every cut, so the cause was the reference's cut points, which sit inside pauses (measured lead-in before the voice: mean 0.20 s, up to 0.95 s; six segments under 0.04 s, which clips the first syllable). Fix: `tighten_segments.py` (see `analyze-reference-video`).

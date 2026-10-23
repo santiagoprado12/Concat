@@ -26,3 +26,14 @@ Not CC0, so not used: Mixkit (its own licence), itch.io whoosh packs (CC-BY or p
 - Title appearing: `pop` on its first frame, volume 0.5.
 - Put effects on their own audio lanes (`track_add bottom: true`, one lane per kind) so they never overlap on a lane. Verified: a single clip at 1.0 s lands at 1.0 s in the export (the isolated test is a 3 s grey clip plus one effect, checked on a spectrogram).
 - A noisy effect mixed under speech cannot be verified by correlation or by the swell detector (both returned nothing useful); verify by exporting a project with only the effect, as above, and by `timeline_read`.
+
+## Background music (CC0)
+
+`The Budding of Consciousness` by Yoiyami on OpenGameArt (`https://opengameart.org/content/the-budding-of-consciousness-%E2%80%93-cc0-ambient-minimalist-theme-yoiyami-blue-series-%E2%80%93-no4`), CC0, `the_budding_of_consciousness.wav`, 43 MB, 224 s, 48 kHz stereo, -18.3 LUFS, a gentle ambient piece with no vocals. Ask before downloading (43 MB):
+
+```bash
+D=~/concat-analysis/music/yoiyami_zip; mkdir -p $D
+curl -fL -sS --max-filesize 90000000 -o $D/the_budding_of_consciousness.wav https://opengameart.org/sites/default/files/the_budding_of_consciousness.wav
+```
+
+Use it at a clip gain of 0.10 (about -20 dB, so roughly -38 LUFS under a voice at -16) with a 1.5 s fade in and 2.5 s fade out; `build_steps.py --music` does the trim and the fades. Not verified by ear. `freepd.com`, often cited as public-domain music, answered as "closed" when fetched, and Kevin MacLeod's tracks need attribution (CC-BY), so neither was used.

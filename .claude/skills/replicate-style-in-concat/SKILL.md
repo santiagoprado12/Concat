@@ -72,6 +72,14 @@ New projects have lanes `T1..T4`. **A higher lane number is drawn above a lower 
 6. **Open the project for the user**: `<concat> --project <project folder>` (the same binary; in the desktop app session run it in the background). The MCP run must have ended, because the lock refuses a project open elsewhere. The app creates the bin thumbnails itself, so it logs harmless "Error loading image ... .thumb.jpg" lines on first open.
 7. Report plainly: what matches, what is approximate, what Concat could not do, and which captions or words were guesses. Then update `references/learnings.md` and, if a recipe changed, this file.
 
+## Workflow for "raw takes only, no edited reference"
+
+1. `analyze-reference-video/scripts/phrases.py` -> exact phrase times and text; choose one take per line.
+2. Write `takes.json` (phrases with their caption chunks) and `overlays.json` (what appears when each line is said: typed step titles, accent words, label chips, placeholder cards, icons, punch-ins, effects), anchoring everything to **words that are said**, not to timestamps. See the docstring of `scripts/takes_to_plan.py`. It lays the cuts (`lead` 0.12 s before the voice, `tail` 0.15 s after, pauses cut out), spreads each phrase's captions over its voiced time, resolves the anchors, and writes `alignment.json`, `captions.json`, `titles.json`, `placeholders*.json`, `icons.json`, `punches.json`, `sfx.json` and `plan.md`.
+3. `make_placeholders.py` (labelled cards for footage not supplied), `make_icons.py` (check, cross, bookmark, comment as transparent PNGs), then `build_steps.py` with the plan files plus `--voice-target -16` (each voice clip gets `concat.loudness`), `--music FILE --music-duration N --music-volume 0.1` (trimmed, faded in and out, about 20 dB under the voice) and `--punches`. Run with `mcp_run.py`, preview a few frames, fix, export.
+4. What the builder does that you would otherwise do by hand: typed titles as clips that grow one letter every 0.06 s, placeholders that rise 10 % and fade in over 0.22 s (opacity and offsetY keyframes), a 7 % zoom on emphasised words (scale keyframes on the clip that holds the word), a `transitionIn` on a card (`"transition": {"id": "concat.dissolve", "duration": 0.4}`), effects greedily spread over audio lanes so none overlap.
+5. Measured on the first run (5-minute raw, 21 takes chosen): 64.5 s, 25 clips, 442 steps, 0 failures; exported loudness -16.1 LUFS with the music in, peak -0.6 dBFS.
+
 ## Honest limits to state to the user
 
 - Concat's MCP has no audio analysis, no beat or scene detection, no sound-library access and no transcription; the analysis happens outside it.

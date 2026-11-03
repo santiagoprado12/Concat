@@ -11,6 +11,8 @@ Nothing is downloaded and nothing leaves the machine. Needs `ffmpeg`/`ffprobe` o
 
 ## Run it
 
+Given a link (Instagram, TikTok, YouTube) instead of a file, first use `fetch-reference-video` to download it, then continue here with the path it prints.
+
 ```bash
 S=<repo>/.claude/skills/analyze-reference-video/scripts
 uv run $S/analyze.py all  /path/to/video.mp4 --out ~/concat-analysis/<name>/ref

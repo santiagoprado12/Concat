@@ -2,6 +2,17 @@
 
 Newest first. Each entry says how it was found. Verified = run against the real app (Concat 0.2.8, macOS, debug build, headless MCP).
 
+## 2026-11-03: identifying sounds and transitions in a reference
+
+Tested on `replica_v3` (64 s, voice + CC0 music bed + 46 effects placed by hand, so the truth is known). Scripts: `transitions.py`, `sounds.py` in `analyze-reference-video`.
+
+- **Transitions: TransNet V2 works.** Every one of 15 cards' end times found as a cut within 0.02 s; the 11 sliding entrances came out as gradual transitions. Its cut time is the *next* frame after the model's output index (`(i + 1) / fps`), verified against the known card times.
+- **Sounds: YAMNet on the mixed track does not work.** It sees the voice and the music, not the effects (recall about 7 %, AUC at chance). With Demucs removing the voice the "when" improves a lot, the "what" does not: only long whooshes get recognised; pops, ticks and light swishes are not recognisable by AudioSet classes at all.
+- **Honest numbers** (they moved when I computed precision per threshold instead of only recall): at the 20 dB floor of `analyze.py report`, 36 of 46 effects found (chance 23 %, p95 46 %), 42 of 45 events real. An earlier "91 % found, 20 of 76 unmatched" belonged to the 15 dB cut and to a different count of events. Always report found, precision and the shifted-at-random baseline together.
+- **The YAMNet "Whoosh" score is tiny even for real whooshes** (max 0.11). A ranking test (AUC 0.90 on crops cut at known effect times) made it look usable, but a fixed threshold only catches about a third. Do not claim effect names from it.
+- **Cost:** Demucs through `uv run --with demucs` is 32 packages, a 138 MB PyTorch wheel and 84 MB of weights; 70 s of stereo audio took 28 s on an M-series CPU. The first end-to-end run of `sounds.py` was 93 s including everything.
+- **Not tried:** CLAP / PANNs for naming effects (CLAP is 615-776 MB); a reference with effects someone has listened to and annotated. The measurements above are all against my own effects at low volume.
+
 ## 2026-10-23 (third): a 5-minute raw take of one person, no reference video
 
 - **Raw shape:** one fixed shot, 301.9 s, 44 spoken takes for about 21 lines (each line 2 to 5 times), a CapCut end card in the last 2 s. Finished edit: 64.5 s from 21 chosen takes, 25 clips.

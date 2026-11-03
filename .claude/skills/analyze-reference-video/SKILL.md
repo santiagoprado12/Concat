@@ -41,7 +41,35 @@ uv run $S/analyze.py all  /path/to/video.mp4 --out ~/concat-analysis/<name>/ref
 - `fraction_of_cuts_with_sfx`, `cuts_within_60ms_of_beat`: cuts that carry an effect, cuts that land on the beat. These are the numbers that define a style.
 - Speech and loud music mask effects: expect missed whooshes under dialogue. If a spectrogram shows a clear bar or blob the list does not, the picture wins.
 - **On a track that is mostly a voice the detectors fire on the voice itself** (plosives, breaths, the first syllable after a gap): the first real run reported 251 "events" in a voice-only reel. So each event carries `in_speech` (voiced speech around it) and `after_silence` (starts within 0.15 s of a silence); `style-report.json` keeps all of them but the correlations use only the `events_plausibly_placed` (outside speech, not after silence, 20 dB or more; swells are exempt from the speech test). **Read `correlations.sfx_verdict` first**: it says "no consistent effect-on-cut pattern" when no label has at least 3 events with a spread under 80 ms around the cuts. Then look at the spectrogram: voice-only audio shows clean harmonic stripes and nothing else, and that means *no sound design*, which is a valid finding to report.
-- There is no speech transcript in these scripts; see "Transcript, with word timings" above.
+- There is no speech transcript in these scripts; see "Transcript, with word timings" below. For voice-heavy tracks run `sounds.py` (below) before trusting any of the above.
+
+## Better transitions: TransNet V2 (`transitions.py`)
+
+`analyze.py shots` uses a frame-difference threshold, so it needs tuning (`--cut`, `--gradual`) and reads a fast slide or a dissolve between similar shots poorly. `transitions.py` runs TransNet V2, a small learned shot-boundary detector (31 MB ONNX, MIT, CPU, a few seconds per minute of video):
+
+```bash
+uv run $S/transitions.py VIDEO --out ~/concat-analysis/<name>/ref --shots ~/concat-analysis/<name>/ref/shots.json [--download]
+```
+
+It writes `transitions.json` (`cuts` with time and score; `graduals` with start, end, duration and peak) and `transitions/gradual_NN.jpg`, six frames across each gradual transition. **Open the strips**: the model says "something gradual happens here", the picture says whether it is a dissolve, a fade, a wipe/slide or a flash. With `--shots` it also reports `agreement` with the frame-difference detector: `cuts_only_transnet` (often the *end* of a slide or zoom that the other detector calls nothing) and `scdet_only`.
+
+Verified on a 64 s reel with 15 cards whose times were known: every card's end was found as a cut within 0.02 s (one frame at 30 fps), and the 11 cards that slide in came out as gradual transitions of 0.13-0.4 s starting within 0.11 s of the real start; all 21 boundaries of the frame-difference detector were also in its list. Jump cuts inside one talking head are not seen by either (same face before and after): use `align_audio.py` for those. The model is fetched only with `--download`; ask first.
+
+## Sound effects without the voice in the way (`sounds.py`)
+
+On a track where someone talks, most of what the detectors in `sfx` report is the voice. `sounds.py` removes it first:
+
+```bash
+uv run $S/sounds.py VIDEO --out ~/concat-analysis/<name>/ref [--download]
+uv run $S/analyze.py report VIDEO --out ~/concat-analysis/<name>/ref     # now uses sfx_stem.json
+```
+
+It separates voice from the rest with Demucs (`htdemucs`; `uv` fetches PyTorch and 84 MB of weights once, about 0.4 s of CPU per second of audio), runs the same event detector on the voiceless stem, then cuts a window around every event and asks YAMNet (AudioSet, 16 MB, Apache-2.0) whether it sounds like a whoosh. `sfx_stem.json` has the `sfx.json` schema plus `yamnet_whoosh`, `yamnet_top`, `name` and `name_confidence`; `style-report.json` uses it automatically when present. Demucs applies a random time shift, so two separations of the same file differ slightly (112 to 121 events on the test reel); the stem is cached and reused, delete `stems/` to redo it. The stems are kept in `stems/` (`no_vocals.wav` is worth listening to for the user; `vocals.wav` is deleted unless `--keep-vocals`).
+
+What it is good for, measured on a 64 s reel with a music bed and 46 hand-placed effects:
+- **When effects happen.** At the 20 dB floor the report applies: 36 of 46 found (chance 23 %, 95th percentile 46 %) and 42 of 45 events were effects. At 15 dB: 42 of 46 found (chance 30 %, p95 61 %) with 58 of 78 events being effects. The mixed-track run had 68 of its 123 events from the voice.
+- **What they are: barely.** Only some long whooshes score above the floor on the YAMNet "Whoosh" class (4 of 11 slide-ins, none of the 49 non-effect events); pops, ticks, light swishes and short swishes were never named. Treat `name_confidence: "low"` as "an effect of unknown kind" and describe it by its shape (`label`, `decay_s`, `centroid_hz`) and the spectrogram, not by a name. `medium` means YAMNet heard a whoosh there (score 0.03 or more; no false ones in the test reel, about a third of the real ones found); the shape label can still say `impact_boom`, because a slide's low end triggers the bass detector.
+- **Leaks.** Demucs does not separate perfectly: dings and pops can survive in the voice stem and some voice in the other. A reference with loud music still gives beats and bass booms (`impact_boom` from the low-band detector) that are not effects; `on_beat` helps there.
 
 ## Pairing raw footage with the edited cut
 
@@ -110,5 +138,5 @@ uv run $S/compare.py ~/concat-analysis/<name>/ref ~/concat-analysis/<name>/repli
 - Dissolves are detected from sustained frame change; very slow fades and cross-dissolves between similar shots can be missed. Fast whip pans can read as two cuts.
 - Cuts hidden under a flash or glitch effect can show as one boundary with a high score.
 - Event timing resolution is about 12 ms (hop 512 at 22.05 kHz); labels are heuristic.
-- Not implemented: source separation (voice / music / effects stems; it would fix the speech problem above), on-screen text OCR (read it from the contact sheets and a few full-size frames), per-effect identification (which Concat transition it is: see `distill-editing-style`), typewriter or other text animation detection (look at a few frames in a row).
+- Not implemented: effects separated from music (Demucs only splits voice from the rest; a zero-shot audio model such as CLAP could name effects better but weighs about 600 MB and was not tried), on-screen text OCR (read it from the contact sheets and a few full-size frames), per-effect identification (which Concat transition it is: see `distill-editing-style`), typewriter or other text animation detection (look at a few frames in a row).
 - Cuts that change the picture but not the voice (a punch-in on the same take) are found by `shots` but are not in the audio alignment; check the shot list against the segments.

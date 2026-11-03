@@ -430,7 +430,8 @@ def nearest(t: float, ref: list[float]) -> tuple[float, float]:
 
 def cmd_report(out: Path) -> dict:
     probe, shots = read_json(out / "probe.json"), read_json(out / "shots.json")
-    audio, sfx = read_json(out / "audio.json"), read_json(out / "sfx.json")
+    audio = read_json(out / "audio.json")
+    sfx = read_json(out / "sfx_stem.json") or read_json(out / "sfx.json")  # sounds.py: events found with the voice removed
     cuts = [b["time"] for b in shots.get("boundaries", [])]
     all_events = sfx.get("events", [])
     swell = ("whoosh_swell", "riser")  # noise-like by nature, so a tonal bed or voice does not disqualify them
@@ -461,6 +462,8 @@ def cmd_report(out: Path) -> dict:
     consistent = [l for l, v in corr.get("sfx_near_cuts", {}).items() if v["count"] >= 3 and v["spread_s"] <= 0.08]
     corr["sfx_verdict"] = (
         "placed effects likely: " + ", ".join(consistent) if consistent else
+        "no consistent effect-on-cut pattern; effects may exist but not on cuts - check the spectrogram" if sfx.get("source")
+        else
         "no consistent effect-on-cut pattern; on a speech-heavy track the detected hits are mostly voice "
         "- check the spectrogram before claiming any sound design" if (sfx.get("speech_fraction") or 0) > 0.3 else
         "no consistent effect-on-cut pattern found")

@@ -1,6 +1,6 @@
 ---
 name: replicate-style-in-concat
-description: Rebuild an edit in Concat through its MCP server - lay the user's raw footage on the timeline as the reference's shots (source in/out, speed), add transitions, titles and captions, place sound effects and music with timing and level, then preview, export and score the result against the reference. Use this whenever the user wants Claude to edit a video in Concat, copy a reference video's editing onto unedited footage, apply a saved style profile, place sound effects on a timeline, or test how far Concat can be driven by an agent - even if they only say "edit this like that" or "make it look like the reference". Contains verified recipes for the MCP tools and a running list of what Concat can and cannot do.
+description: Rebuild an edit in Concat through its MCP server - lay the user's raw footage on the timeline as the reference's shots (source in/out, speed), add transitions, titles and captions, place sound effects and music with timing and level, then preview, export and score the result against the reference. Use this whenever the user wants Claude to edit a video in Concat, copy a reference video's editing onto unedited footage, apply a saved style profile, place sound effects on a timeline, or test how far Concat can be driven by an agent - even if they only say "edit this like that" or "make it look like the reference". Also covers copying a finished edit that exists only as a screen recording, the user's approved sound palette and how to give them sounds to audition, and the checks that catch a black frame at a cut. Contains verified recipes for the MCP tools and a running list of what Concat can and cannot do.
 ---
 
 # Replicating an edit in Concat
@@ -50,7 +50,7 @@ New projects have lanes `T1..T4`. **A higher lane number is drawn above a lower 
 **Titles** - `title_add {path, start, duration, style: {content, fontSize, fontWeight, color, ...}, offsetY?, above?}`. `fontSize` is a fraction of frame height (0.09 default). Fonts the machine lacks fall back silently. `captions_add {captions: [...], style, offsetY}` places many in one undoable step.
 
 **Sound effects** - `media_import` the audio file, `clip_add` it on an audio lane at `start = event_time + offset` (negative for sounds that lead the cut: a whoosh whose peak is 0.12 s before the cut starts about 0.6 s before it if the swell takes ~0.6 s to peak). Then `clip_update {patch: {"volume": 0.6, "fadeIn": 0.02, "fadeOut": 0.1}}`. Volume is a gain (1 = unchanged). Give effects their own lane(s): `track_add {bottom: true}` returns the lane id in `createdId`.
-- Concat's own sound library is **not published yet**, so effects come from the user's folder or from open sets. `references/sfx-sources.md` has two CC0 sets (a swish pack and Kenney's interface sounds), the download commands and placement rules; `scripts/make_sfx_pack.py` turns them into a named palette (`slide_in`, `swish_short`, `pop`, ...). Ask before downloading. With no files at all, `scripts/make_sfx.py` synthesizes crude stand-ins; say so.
+- Concat's own sound library is **not published yet** (manifest 404, re-check it), so effects come from the user's folder or from open sets. **Use only the user's approved palette** in `references/sfx-sources.md` (eight sounds, with the levels they settled on) unless they ask for others; synthesized stand-ins were rejected. That file also lists the CC0 sets, download commands and placement rules; `scripts/make_sfx_pack.py` turns them into a named palette, and `scripts/add_to_library.py` puts sounds in the user's own library (Audio page, Mine shelf) so they can audition and choose. Ask before downloading. `scripts/make_sfx.py` synthesizes crude stand-ins only when there is nothing else; say so.
 - `build_steps.py --sfx sfx.json` lays a list of `{file, start, volume, lane}` on lanes of their own.
 - Music: place on a lane, then duck under speech with `keyframe_set {clipId, property: "volume", at: <fraction of clip 0..1>, value}`.
 
@@ -80,8 +80,17 @@ New projects have lanes `T1..T4`. **A higher lane number is drawn above a lower 
 4. What the builder does that you would otherwise do by hand: typed titles as clips that grow one letter every 0.06 s, placeholders that rise 10 % and fade in over 0.22 s (opacity and offsetY keyframes), a 7 % zoom on emphasised words (scale keyframes on the clip that holds the word), a `transitionIn` on a card (`"transition": {"id": "concat.dissolve", "duration": 0.4}`), effects greedily spread over audio lanes so none overlap.
 5. Measured on the first run (5-minute raw, 21 takes chosen): 64.5 s, 25 clips, 442 steps, 0 failures; exported loudness -16.1 LUFS with the music in, peak -0.6 dBFS.
 
+## Workflow for "copy this finished edit" when you only have a screen recording of it
+
+1. Crop the preview area out of the recording (9:16 inside a taller frame) and find the cuts (frame difference on the person region) and every overlay's on/off frame (white pixels in a pill's box, or a frame diff on its region). `analyze-reference-video/scripts/align_audio.py` gives raw segment offsets on the *audio* clock.
+2. `register_frames.py` on 2 or 3 matching raw/edit frames: scale, rotation, offsetX/Y for `clip_transform` and the colour gains. `picture_sync.py`: the picture-based correction to the raw in-points (the recording's audio lags by about 0.2 s).
+3. Build with a generator (copy the idea of the one in `learnings.md`: one lane per overlay kind, explicit `trackId`, frame-grid times, container duration for `clip_trim`), render `preview_frame` at a few times and compare side by side with the reference crops; adjust sizes by measured widths (a font that is not bundled needs a different size to match the width).
+4. Export, run `blackdetect` and read `concat.json` back; send the video, then apply the user's taste (they usually cool and darken the grade and lower the sounds) and write the final numbers into `house-style.md`.
+5. After the user edits in the window, read their saved `concat.json` for what changed (grade, volumes, times, filter order) instead of asking them for numbers.
+
 ## Honest limits to state to the user
 
 - Concat's MCP has no audio analysis, no beat or scene detection, no sound-library access and no transcription; the analysis happens outside it.
 - Visual effects have to be matched by name from `effects_list`; custom looks may only be approximated.
-- Claude cannot hear the result: sound is checked with the loudness/event analysis and spectrograms, not by listening. Ask the user to listen for anything the scores cannot judge.
+- Claude cannot hear the result: sound is checked with the loudness/event analysis and spectrograms, not by listening. Ask the user to listen for anything the scores cannot judge. They have also been right where the numbers said otherwise (voice chains, sound levels).
+- Pick settings the user has already approved (`house-style.md`, `sfx-sources.md`) before inventing new ones.

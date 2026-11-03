@@ -1,10 +1,10 @@
-# House style (learned from two vertical talking-head reels)
+# House style (learned from two vertical talking-head reels and one list-builds-up reel)
 
 Both reels are one person talking to camera, cut hard, with cutaways. This is what was measured or approved. Sizes are fractions of the frame height; Concat renders the listed fonts.
 
 ## Picture
 - 1080x1920 at 30 fps. Hard cuts only; one soft dissolve (0.4 s) at most, for a before/after.
-- No colour grade on the speaker. Optional: a Warm layer at about 20 % to match a colder set (the user declined it once).
+- No colour grade on the speaker by default. Optional: a Warm layer at about 20 % to match a colder set (the user declined it once). Direction of taste, from the list reel below: neutral to cool and a little dark (they cooled and darkened a warm, exact copy of a reference grade); never push warm or bright without asking.
 - Punch-in: 100 % to 107 % in 0.25 s on about five emphasised words, held to the end of that clip.
 - Cutaways (B-roll, screenshots, image cards) sit over the continuing voice. Cards and screenshots rise 10 % of the frame while fading in over 0.22 s and leave with a hard cut.
 
@@ -23,5 +23,25 @@ Both reels are one person talking to camera, cut hard, with cutaways. This is wh
 ## Sound
 - Voice normalised to -16 LUFS (Normalize Loudness on each voice clip); raw recordings were -19 to -21 LUFS.
 - Background music optional and very low: a gentle CC0 ambient piece at gain 0.10 (about 20 dB under the voice), 1.5 s fade in, 2.5 s fade out. The first reel had none.
-- Effects (CC0, see `replicate-style-in-concat/references/sfx-sources.md`): slide for cards and screenshots (volume 0.7) with a light swish on exit (0.4), a short swish on cuts to B-roll (0.45), a pop when a title or label appears (0.5). About 45 for a 65 s reel, each on a free audio lane.
+- Effects (CC0, see `replicate-style-in-concat/references/sfx-sources.md`): slide for cards and screenshots (volume 0.7) with a light swish on exit (0.4), a short swish on cuts to B-roll (0.45), a pop when a title or label appears (0.5). About 45 for a 65 s reel, each on a free audio lane. These levels and sounds were later superseded for this user by the approved palette below and in `sfx-sources.md`: only those sounds, and quieter.
 - The first reference reel had no music and no placed effects (its sound was the voice only); effects and music are the user's own addition to the style.
+
+## List-builds-up reel ("Rutina realista", 1080x1920, 9.5 s, one speaker pointing at items)
+
+Replicated from a collaborator's CapCut edit (measured on a screen recording, see `replicate-style-in-concat/references/learnings.md`), then tuned by the user. Numbers are fractions of the frame; offsets are from the centre of the frame (positive right/down), taken from the reference at 828x1472.
+- **Structure:** 3 rounds x 3 rows (frequency pill / emoji / label). A round ends with a hard cut of the take and the list clears on that frame; the next round's first row appears on the cut. A row's pill, emoji and label enter on the same frame as the speaker says its frequency and points, with no fade and no animation. Pauses between rounds are cut; the first speech starts about 0.4 s into the video, with no dead start.
+- **Picture:** zoom 1.16, rotation about +1 degree (the reference straightened the horizon), offsetY -0.046. Grade the user settled on: `concat.white-balance` 5150 K + `concat.exposure` -0.3 + Adjust exposure -0.5 and temperature 11000 (net cooler than the raw footage and about 22 % darker than an exact copy of the reference).
+- **Title:** two lines "Rutina realista para / cuidar tus espacios", Bodoni 72 (a macOS system font, not bundled; True Fate was the reference's), size 0.0435, line height 0.78, white with a soft shadow, no outline (the user rejected a black outline), centred at offsetY -0.342.
+- **Pills:** white plates (`#FFFFFF`), Bodoni 72, size 0.025, text `#1A1A1A`, no shadow on the black text, padding 0.0109 x 0.01135, radius 0.0095; centres at x +0.215, y -0.249 / -0.048 / +0.160 ("Cada día / Cada semana / Cada mes"). The user first asked for smaller items than my first draft (twice), then asked for an exact copy of the reference, whose sizes these are.
+- **Emoji:** Apple Color Emoji PNGs (256 px, square-padded), scale 0.115, centres x about +0.21 to +0.22, y -0.181 / +0.020 / +0.227; same set in every round (the user asked for Apple emoji and a woman meditating instead of a repeated sparkle on the third round's first row).
+- **Labels:** Hanken Grotesk Regular (reference: Open Sans), white with a soft shadow, size 0.0225, line height 0.785, centres x +0.209 / +0.209 / +0.203, y -0.120 / +0.082 / +0.292; short two-line breaks ("Anota que / incomoda"), copy exactly as the reference writes it (including its missing accent), not as the brief did.
+- **Voice:** from a cleaned copy of the take; Concat `denoise` strength 100, `enhance-voice` amount 100, `loudness` -16 (the same chain as CapCut's "mejorar voz" at maximum plus noise reduction), chain order denoise, enhance, loudness on every clip.
+- **Sounds:** only the approved palette (`replicate-style-in-concat/references/sfx-sources.md`): drop 002 / confirmation 001 / confirmation 002 for the three rows, very low under the voice; a sound lands when the finger touches the row if that differs from when the row appears.
+
+## Working with this user (process)
+
+- Speak Spanish; the user is usually on a phone: deliver every video or audio with `SendUserFile`, keep messages short and plain, ask with choices. Tell what was measured and what was only checked on frames, since the user hears and sees what Claude cannot.
+- Ask before downloading anything (state source, files, size). Free/CC0 only for sounds, music and fonts that go into a video.
+- Iterate in new project folders per version (`name_vN`), keep the final one open in the Concat window when asked, and when told "this one is good" move the earlier projects and renders to the Trash (not `rm`) while keeping the assets they depend on (cleaned audio, icons): projects point at media by absolute path.
+- Offer examples to choose from (frames at different exposures, numbered audio samples) instead of guessing taste; apply the choice everywhere, and record it here.
+- Judge the voice by the user's ear: three rounds of "still a bit odd" were not predicted by measurements, and a measurably worse chain (max filters) was called perfect.

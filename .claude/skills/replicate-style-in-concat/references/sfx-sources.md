@@ -1,6 +1,6 @@
 # Sound effect sources (open licences)
 
-Concat's own sound library is not published (`https://raw.githubusercontent.com/concatapp/assets/main/audio/manifest.json` returned 404 on 2026-10-23). These two sets are CC0, small, and were verified to download and convert. **Ask the user before downloading**; keep each archive in its own new folder under `~/concat-analysis/sfx/` and never commit audio to the repo.
+Concat's own sound library is not published (`https://raw.githubusercontent.com/concatapp/assets/main/audio/manifest.json` returned 404 on 2026-10-23 and again on 2026-11-03). These two sets are CC0, small, and were verified to download and convert. **Ask the user before downloading**; keep each archive in its own new folder under `~/concat-analysis/sfx/` and never commit audio to the repo.
 
 | Set | Author / source | Licence | Size | Use |
 | --- | --- | --- | --- | --- |
@@ -37,3 +37,34 @@ curl -fL -sS --max-filesize 90000000 -o $D/the_budding_of_consciousness.wav http
 ```
 
 Use it at a clip gain of 0.10 (about -20 dB, so roughly -38 LUFS under a voice at -16) with a 1.5 s fade in and 2.5 s fade out; `build_steps.py --music` does the trim and the fades. Not verified by ear. `freepd.com`, often cited as public-domain music, answered as "closed" when fetched, and Kevin MacLeod's tracks need attribution (CC-BY), so neither was used.
+
+## The user's approved palette (use only these until told otherwise)
+
+After auditioning about 200 sounds in the Audio page, the user allowed eight for everything (2026-11-03). They live in their library under these names (`add_to_library.py` puts them there; Kenney files are `confirmation_001.wav`, `drop_002.wav` ... in the set below):
+
+| Library name | Use it for | Level the user settled on |
+| --- | --- | --- |
+| Kenney - drop 002 | first row of a list (a day) | volume 0.335 (-9.5 dB) |
+| Kenney - confirmation 001 | second row (a week) | 0.178 (-15 dB) |
+| Kenney - confirmation 002 | third row (a month) | 0.141 (-17 dB) |
+| Kenney - confirmation 003, Kenney - drop 003 | alternates for the same cues | not placed yet; match the loudness of the row they replace |
+| Pack - Pop, Pack - Swish corto, Pack - Swish ligero | a title/label appearing, a cut to B-roll, a list clearing | start at 0.35 (pop) and 0.4 (swishes), then lower to taste (the user lowered every sound they heard) |
+
+Placement: on the first frame of the thing that appears, except where a hand or finger touches it: then on the touch (the user moved the first one 0.38 s later, onto the finger). One audio lane per sound (`track_add bottom: true`). Set clip volume in dB-derived gains; the user's final values are well under the voice, so start low. Not wanted: synthesized pops (sine sweeps, kalimba, bubble), "dry" clicks; the rest of the library stays available for the user to try, but never place from it unasked.
+
+More CC0 sets found and used (2026-11-03), each fetched after the user said yes; keep each in its own folder under `~/concat-analysis/sfx/`:
+
+| Set | Source | Licence | Notes |
+| --- | --- | --- | --- |
+| Pop sounds (10 `.ogg`, `pop1`..`pop10`) | OpenGameArt `https://opengameart.org/content/pop-sounds` by cogitollc; files at `https://opengameart.org/sites/default/files/pop<N>.ogg` | CC0 | short, dry |
+| Pop sounds (9 `.wav`) | OpenGameArt `https://opengameart.org/content/pop-sounds-0` by EZduzziteh; `.../files/pop<N>.wav` | CC0 | bubble-like |
+| Kenney UI Audio (50 `.wav`) | `https://github.com/Calinou/kenney-ui-audio/archive/refs/heads/master.zip` (`addons/kenney_ui_audio/`), original at `https://kenney.nl/assets/ui-audio` | CC0 | clicks, switches |
+| Kenney Interface Sounds (100 `.wav`) | see the table above; the `confirmation_*` and `drop_*` files are the approved ones | CC0 | |
+
+Not tried: OpenGameArt "3 pop sounds" and "UI Sounds", Kenney Digital Audio (licence not confirmed on Kenney's page), a 35-file "mouth pops" pack on Gumroad (licence unseen). OpenGameArt answers a plain `curl` with a browser user agent, but `WebFetch` gets a 403 from it, so list the file links with `curl -A "Mozilla/5.0" ... | grep -o 'https://opengameart.org/sites/default/files/[^"]*'`.
+
+Softening a dry pop (offered, not chosen): `ffmpeg -i pop.wav -ac 1 -af "lowpass=f=4200,aecho=0.8:0.55:35|75:0.28|0.14,alimiter=limit=0.5:level=disabled"`, then normalise the peak. Do not put `afade` with `st=0` in the chain: it silences the whole file.
+
+## Putting sounds where the user can audition them
+
+Concat's built-in shelf is empty (manifest 404). `scripts/add_to_library.py` copies sounds into the user's own library folder and writes `library.json` the way the app does, so they show on the Audio page's Mine shelf with a waveform (reopen the project to refresh). Name them `Set - name` so the shelf sorts by set. Example: `uv run --python 3.12 scripts/add_to_library.py --dir <kenney folder> --prefix "Kenney - "`.

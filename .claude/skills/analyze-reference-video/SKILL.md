@@ -1,6 +1,6 @@
 ---
 name: analyze-reference-video
-description: Turn a video into data and images Claude can actually read - cut times, transition strips, one frame per shot, loudness, spectrograms, a timeline of sound effects (hits, whooshes, risers), the music beat grid, and how sound lines up with cuts. Use this whenever the user hands over a reference or "edited" video and wants to understand or copy its editing style, asks how a video is cut or paced, wants to know where its sound effects and music sit, wants to find which parts of raw footage ended up in an edited video, or wants to check how close a replica in Concat is to its reference - even if they never say "analyze". Claude cannot watch or listen to a video directly; this skill is how it gets evidence.
+description: Turn a video into data and images Claude can actually read - cut times, transition strips, one frame per shot, loudness, spectrograms, a timeline of sound effects (hits, whooshes, risers), the music beat grid, and how sound lines up with cuts. Use this whenever the user hands over a reference or "edited" video and wants to understand or copy its editing style, asks how a video is cut or paced, wants to know where its sound effects and music sit, wants to find which parts of raw footage ended up in an edited video, or wants to check how close a replica in Concat is to its reference - even if they never say "analyze". Also use it when the reference is a phone screen recording of an editor's preview (CapCut and the like): it recovers the cuts, the zoom/rotation/offset and the colour grade the editor applied, and the true picture-to-raw sync. Claude cannot watch or listen to a video directly; this skill is how it gets evidence.
 ---
 
 # Analyzing a reference video
@@ -95,6 +95,15 @@ uv run $S/align_audio.py RAW.mp4 EDITED.mp4 --out ~/concat-analysis/<name>/ref -
 It compares log-mel features of the edited audio with the raw audio in 1 s windows, merges runs that sit at the same raw offset into **segments** (`edited [a,b] <- raw [a+d, b+d]`) and refines each boundary to about 10 ms. `audio_alignment.json` lists the segments with a `score` (0.76-0.92 on real speech; below about 0.55 is unreliable) and, with `--shots`, tags every edited shot `talking_head` (the picture matches the raw picture at the aligned time, diff under about 14) or `other` (B-roll, a screenshot, an overlay: diff over about 35). Verified on a 4-minute raw and a 57 s edit: 24 segments covered the whole edit and the picture test separated the two kinds cleanly.
 
 The audio cuts and the picture cuts of an edit are **independent**: B-roll is laid over a voice track that keeps going. Rebuild the voice from the segments, then cover the `other` shots with whatever footage belongs there.
+
+## A phone screen recording of the editor's preview as the reference
+
+Sometimes the "edited video" is a screen recording of CapCut or another editor playing the result. Crop the 9:16 preview, then: `align_audio.py` for raw segment offsets (the recording's audio lags its picture, about 0.2 s, and cuts inside a pause are arbitrary), `picture_sync.py` to correct them from the picture, and `register_frames.py` for the zoom, rotation, offset and colour change the editor applied. All three are verified against Concat renders; the numbers and the closed-loop check are in `replicate-style-in-concat/references/learnings.md` (2026-11-03, last entry).
+
+```bash
+uv run $S/register_frames.py raw_a.png edit_a.png raw_b.png edit_b.png
+uv run $S/picture_sync.py --edit REC.mov --raw RAW.mov --crop 828:1472:0:175 --scale 1.16 --offset-y -0.046 --segment 0.5:3.3:4.64:1.2
+```
 
 ## Raw footage with retakes (no reference video)
 

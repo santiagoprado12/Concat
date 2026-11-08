@@ -1,4 +1,4 @@
-# House style (learned from two vertical talking-head reels and one list-builds-up reel)
+# House style (learned from two vertical talking-head reels, one list-builds-up reel and one split-screen two-character reel)
 
 Both reels are one person talking to camera, cut hard, with cutaways. This is what was measured or approved. Sizes are fractions of the frame height; Concat renders the listed fonts.
 
@@ -38,7 +38,22 @@ Replicated from a collaborator's CapCut edit (measured on a screen recording, se
 - **Voice:** from a cleaned copy of the take; Concat `denoise` strength 100, `enhance-voice` amount 100, `loudness` -16 (the same chain as CapCut's "mejorar voz" at maximum plus noise reduction), chain order denoise, enhance, loudness on every clip.
 - **Sounds:** only the approved palette (`replicate-style-in-concat/references/sfx-sources.md`): drop 002 / confirmation 001 / confirmation 002 for the three rows, very low under the voice; a sound lands when the finger touches the row if that differs from when the row appears.
 
+## "Two opposite versions" split-screen reel (1080x1920, 77 s, one person playing two characters)
+
+Built from two raw takes with a locked-off camera (details and traps in `replicate-style-in-concat/references/learnings.md`, 2026-11-07). Final look approved by the user; numbers are fractions of the frame (offsets from the centre, positive right/down).
+- **Structure:** five moments, each a turn per character, the same turn order throughout (first the "wrong" version, then the "right" one), ending with the brand's method and tool. One speaking clip per phrase from the last good take; the other half always listens on a layer that is muted.
+- **Picture:** both raws at scale 1.12 (hides the feet at the bottom of the frame), the top layer masked on the vertical centre line with a soft edge (feather 0.14), the warmer layer cooled with `concat.white-balance` to match the wall at the seam. No transitions, no punch-in, no music.
+- **Title:** two lines, Open Sans regular 0.040, espresso `#2B221E`, no shadow, centred at offsetY -0.35. **Plates:** one per person over her head (Open Sans 0.019, padding 0.03 x 0.010, radius 0.007), cream `#F4EFD0` on the left and mauve `#8E5E67` with cream text on the right, offsetY -0.23, offsetX -0.23 and +0.27, "VS" between them on a small cream plate. The reference reel used coloured plates and 4 floating emojis; the user first asked for three emoji (couch, chair, sparkles) and then removed them.
+- **Captions:** one word at a time, Open Sans regular 0.034, white, soft shadow, no background, offsetY +0.07 (on the seam between the two people). Written by hand from the script, aligned to Whisper timings, proofread by the user.
+- **Cards** (images that illustrate what is said): bottom and centred (offsetY +0.22 to +0.30, scale 0.30 to 0.62 depending on aspect), never over a face or a caption; they rise 10 % while fading in over 0.22 s and leave with a cut; the approved soft swish (volume 0.2) at each entrance. Objects as transparent PNG; two of the same object (chairs) as one image mirrored with `flipH`, scale 0.40 each at offsetX +-0.20; one object scale 0.48.
+- **Voice:** each take cleaned with ffmpeg (`highpass 90` twice, `afftdn nr=20`) before Concat's chain (`denoise` 100, `enhance-voice` 100, `loudness` -16); the export measured -16.5 LUFS, peak -4.5 dBFS.
+- **Order of the user's complaints (to avoid them from round one):** the listener reading or leaning; abrupt cuts and slow motion on movement; a speaker cut mid-word or a long pause between phrases; captions missing a phrase; images over captions or on the other person; the same listening footage repeated.
+
 ## Working with this user (process)
+
+- **Review renders are small and fast:** 540x960 at crf 34 for every iteration (about 1 minute, 3 MB, under the phone upload limit), full quality only after "me gusta" or an explicit go-ahead. Send files with `SendUserFile` (30 MB limit: make a lighter copy).
+- **Feedback comes as screenshots with a timestamp each:** check the frames around those seconds (and a frame every 0.5 s of the part you changed) and touch nothing else; ask which parts are approved and keep them fixed.
+- **Final delivery:** when the user cannot reach the computer (phone only), upload the final file to the Drive folder they name through the browser (`.claude/skills/upload-to-drive-via-browser`), after asking the folder.
 
 - Speak Spanish; the user is usually on a phone: deliver every video or audio with `SendUserFile`, keep messages short and plain, ask with choices. Tell what was measured and what was only checked on frames, since the user hears and sees what Claude cannot.
 - Ask before downloading anything (state source, files, size). Free/CC0 only for sounds, music and fonts that go into a video.

@@ -128,7 +128,21 @@ ffmpeg -i EDITED.mp4 -vn -ac 1 -ar 16000 edited16k.wav
 whisper-cli -m <ggml-base.bin> -l es -f edited16k.wav -ojf -of edited --split-on-word --max-len 1 -np
 ```
 
-`edited.json` -> `transcription[].offsets.from/to` (ms) per word. The `base` model mishears names, brands and jargon ("moodboard" came out as "mútbol"); **correct the words against the captions burned into the reference frames**, keep Whisper's timings, and list any guess you could not verify.
+Add `--prompt "<script keywords, product and brand names>"` when you know the script: it fixed most misheard names and words in Spanish. Transcribe each chosen take **alone** (cut with ffmpeg first) so every phrase has exact times. `edited.json` -> `transcription[].offsets.from/to` (ms) per word. The `base` model mishears names, brands and jargon ("moodboard" came out as "mútbol"); **correct the words against the captions burned into the reference frames**, keep Whisper's timings, and list any guess you could not verify.
+
+## Where a person looks, and how visible a cut would be (`face_gaze.py`, `frame_descriptors.py`)
+
+Needed when a person must look attentive while someone else speaks (a listener in a split-screen reel, a reaction cutaway), or when you must join two pieces of footage of the same person without a visible jump. Run with `uv run --python 3.12` (MediaPipe 0.10.14 wheels; newer ones dropped the face mesh API):
+
+```bash
+uv run --python 3.12 $S/face_gaze.py RAW.mov --crop 0.5:0.17:0.5:0.62 --out gaze.json --contact contact.jpg
+uv run $S/frame_descriptors.py RAW.mov --crop 0.5:0.17:0.5:0.62 --out desc.npy
+uv run $S/frame_descriptors.py --diff desc.npy 51.2 53.0          # visible difference of a cut, 0-255
+```
+
+- `gaze.json` has, every 0.1 s, head turn (`yaw`), looking down (`pitch`, above 0.40 is reading), eye opening (`eo`, under 0.26 is a blink or eyes down), mouth opening (`mo`), and nose position. Use it to shortlist; **then look at a cropped face every 0.5 s of the shortlist**, because the numbers let glances down, tilts and a hand at the hair through. `--contact` writes the extreme frames of each feature so you can calibrate the thresholds on that person first.
+- `frame_descriptors.py` compares grayscale thumbnails of one region: calm frames 0.1 s apart score 1 to 3, 1 s apart 8 to 12; cuts a person accepted measured 4.8 to 10.6 and "jumps" 12 and above. Cap internal cuts around 9 and cut where the head is still.
+- The full pipeline, the slow-motion table by stillness and the boomerang trick are in `replicate-style-in-concat/references/learnings.md` (2026-11-07).
 
 ## Scoring a replica against its reference
 

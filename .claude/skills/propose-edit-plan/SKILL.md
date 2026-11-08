@@ -41,6 +41,11 @@ Record the decisions (length, music, spelling, assets) in `takes.json`/`overlays
 
 ## Things that went wrong before
 
+- **Check feasibility before drawing the map.** For a format that needs footage the raws may not contain (a person listening attentively, a second angle, B-roll), measure how much usable footage exists against how much the plan needs (`analyze-reference-video/scripts/face_gaze.py`), and put the shortfall and the proposed compromise on the Resumen board as a decision. In the split-screen reel the raws held 15 to 30 clean seconds against 35 to 42 needed and this surfaced only after the user had approved the plan.
+- **Measure the references instead of describing them:** a reference reel's layout (title height, plate positions, caption row, card positions) transposes badly when the subject is standing instead of sitting; measure heads and text zones in the user's own frame and say what moves and why. Check text legibility per zone for each text colour (a white wall made the cream text of earlier reels unreadable).
+- **Keep the canvas true after later rounds:** decisions taken in chat (font, no emoji, zoom, extra images) made the published canvas stale; either update it at the end or tell the user it is out of date.
+- **Resources arrive later:** the Imágenes board becomes a list per moment with its time, the file type wanted (transparent PNG for objects), and what stays as a labelled placeholder.
+
 - Publishing with `edits` is refused when a hook is configured for file edits: edit the file, then publish it without `edits`.
 - Two Writes in a row work but the type's instructions say one artboard per publish; follow that.
 - A board's height is a guess: over-tall is better than clipped, and the index (`canvas.json`) must be re-sent when a size changes.

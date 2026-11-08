@@ -59,6 +59,8 @@ New projects have lanes `T1..T4`. **A higher lane number is drawn above a lower 
 **Check, save, export**
 - `preview_frame {path, time, output: <png under home>, width, height}` renders the real composite (titles and effects included). Look at it with Read.
 - `project_save {path}` then `export_start {path, output: <mp4 under home>, width?, height?, crf?}` -> `job`, then `export_wait {job, timeoutSeconds}`.
+- **Review renders small, final render large.** Every iteration the user will look at: `width 540, height 960, crf 34` (about 1 minute, 3 MB, fits a phone upload). Full quality (1080x1920, 5 minutes, 35-40 MB) only after the user approves. A foreground call is limited to 10 minutes: run long sessions with `nohup ... &` and poll the log for `"state":"done"`.
+- **Reverse playback and per-clip speed:** Concat cannot play backwards; pre-render the reversed piece with ffmpeg (`reverse`) and import it. With `clip_speed v`, trim the start by `in / v`. See `references/learnings.md` (2026-11-07).
 - `edit_apply {command: {"op": "batch", "commands": [...]}}` runs many ops atomically as one undo step; ops include `addClip, splitClips, trimClip, moveClips, setClipSpeed, updateClip, setClipKey, addTextClip, detachAudio, freezeFrame, ...` (see `references/learnings.md` for any used so far).
 
 ## Workflow for "copy this edit onto my raw footage"
@@ -79,6 +81,13 @@ New projects have lanes `T1..T4`. **A higher lane number is drawn above a lower 
 3. `make_placeholders.py` (labelled cards for footage not supplied), `make_icons.py` (check, cross, bookmark, comment as transparent PNGs), then `build_steps.py` with the plan files plus `--voice-target -16` (each voice clip gets `concat.loudness`), `--music FILE --music-duration N --music-volume 0.1` (trimmed, faded in and out, about 20 dB under the voice) and `--punches`. Run with `mcp_run.py`, preview a few frames, fix, export.
 4. What the builder does that you would otherwise do by hand: typed titles as clips that grow one letter every 0.06 s, placeholders that rise 10 % and fade in over 0.22 s (opacity and offsetY keyframes), a 7 % zoom on emphasised words (scale keyframes on the clip that holds the word), a `transitionIn` on a card (`"transition": {"id": "concat.dissolve", "duration": 0.4}`), effects greedily spread over audio lanes so none overlap.
 5. Measured on the first run (5-minute raw, 21 takes chosen): 64.5 s, 25 clips, 442 steps, 0 failures; exported loudness -16.1 LUFS with the music in, peak -0.6 dBFS.
+
+## Workflow for "two raw takes of one person, shown side by side" (split screen)
+
+1. Check the camera did not move (SIFT/RANSAC on the static top band of one frame of each raw), then lay raw A on `T1`, raw B on `T2` with a linear `clip_mask` on the vertical centre line (feather about 0.14) and cool the warmer layer until the wall matches at the seam; render previews and look.
+2. Per raw: `phrases.py` for the spoken lines, choose the last good take of each line, transcribe each chosen piece alone with `whisper-cli --prompt`, align your own corrected caption text to its timings (`difflib`), end every cut after the word dies away (check the level in the last 80 ms of each cut in the export), splice a clean repeat when a take stumbles.
+3. **Plan the silent half before promising anything:** count the clean listening seconds against the seconds needed per person (see `references/learnings.md`, 2026-11-07, "The person who listens") with `analyze-reference-video/scripts/face_gaze.py` and `frame_descriptors.py`, look at a frame every 0.5 s of the candidates, slow only still pieces, join with boomerangs and cuts under a difference of about 9, lock the turns the user approves. If the rules cannot all be met, say it with the numbers and offer two or three sacrifices.
+4. Overlays (title, plates, one-word captions, image cards on their own lanes), the approved soft swish at each card, no music, voice chain, a small review render, then the full render after approval and, if asked, delivery through `.claude/skills/upload-to-drive-via-browser`. The numbers of the approved layout are in `propose-edit-plan/references/house-style.md`.
 
 ## Workflow for "copy this finished edit" when you only have a screen recording of it
 

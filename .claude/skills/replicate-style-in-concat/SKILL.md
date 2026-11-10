@@ -97,6 +97,10 @@ New projects have lanes `T1..T4`. **A higher lane number is drawn above a lower 
 4. Export, run `blackdetect` and read `concat.json` back; send the video, then apply the user's taste (they usually cool and darken the grade and lower the sounds) and write the final numbers into `house-style.md`.
 5. After the user edits in the window, read their saved `concat.json` for what changed (grade, volumes, times, filter order) instead of asking them for numbers.
 
+## Always on every voice clip
+
+Enable **noise cancellation and voice enhancement** on every clip that carries a voice, without waiting to be asked: `clip_update {clipId, patch: {"filters": [{"id": "concat.denoise", "params": {"strength": 100}}, {"id": "concat.enhance-voice", "params": {"amount": 100}}, {"id": "concat.loudness", "params": {"target": -16}}]}}`, in that order (loudness before enhance changes the sound). `build_steps.py` does it by default; a generator you write yourself must do it too. Before exporting, read `concat.json` back and check each voice clip lists the three filters; the user reminded us twice (once after hearing background noise in an export that already had them: the filters were present, and the noise was probably room echo or the maximum enhancement, so a reminder is a reason to re-check the saved project and the raw's noise floor, not only to re-apply).
+
 ## Honest limits to state to the user
 
 - Concat's MCP has no audio analysis, no beat or scene detection, no sound-library access and no transcription; the analysis happens outside it.

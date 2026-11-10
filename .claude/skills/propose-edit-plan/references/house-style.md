@@ -16,7 +16,7 @@ What the user has approved or insisted on across four videos. These are defaults
 - Images that illustrate what is said (cards): bottom and centred, medium size, rising 10 % and fading in over 0.22 s, a hard cut out, a transparent PNG for objects, a mirrored copy when the same object appears twice. Never over a face, never over a caption. No emoji floating around the title (the user tried three and removed them).
 
 **Sound**
-- Voice cleaned and loud: ffmpeg high-pass and `afftdn` on the raw, then Concat `denoise` 100, `enhance-voice` 100, `loudness` -16, in that order on every clip.
+- **ALWAYS enable noise cancellation and voice enhancement, without being asked, on every clip that carries a voice** (the user reminded us twice): ffmpeg high-pass and `afftdn` on the raw first, then in Concat `denoise` strength 100, `enhance-voice` amount 100 and `loudness` -16, in that order, through `clip_update patch.filters`; check the saved project afterwards (`concat.json`: every voice clip lists the three filters) and a muted listening clip needs none. `scripts/build_steps.py` now adds the chain by default.
 - Only the eight approved effects (`replicate-style-in-concat/sounds/`, with when to use each), very low under the voice: the soft swish when an image enters, the drop and confirmation sounds for list rows.
 
 **Cuts and performance**

@@ -4,7 +4,7 @@
   python3 -I build_steps.py --raw RAW.mp4 --raw-duration 243.73 --alignment alignment.json \
       --location ~/concat-analysis/job --name project --size 1080x1920 --fps 30 \
       [--placeholders P.json] [--icons I.json] [--captions C.json] [--titles T.json] [--sfx S.json] \
-      [--punches U.json] [--music M.wav --music-duration 224 --music-volume 0.1] [--voice-target -16] \
+      [--punches U.json] [--music M.wav --music-duration 224 --music-volume 0.1] [--voice-target -16] [--no-voice-chain] \
       [--export out.mp4] [--preview 3.0,17.5] --out steps.json
 
 Layout built (lane numbers are what Concat's `title_add above` and captions_add put above the rest):
@@ -53,7 +53,11 @@ def main() -> None:
     ap.add_argument("--music-volume", type=float, default=0.1, help="gain; 0.1 is about 20 dB under the voice")
     ap.add_argument("--music-fade-in", type=float, default=1.5)
     ap.add_argument("--music-fade-out", type=float, default=2.5)
-    ap.add_argument("--voice-target", type=float, help="normalise each voice clip to this loudness in dB (e.g. -16)")
+    ap.add_argument("--voice-target", type=float, default=-16.0,
+                    help="loudness of every voice clip in dB (default -16, the user's target)")
+    ap.add_argument("--no-voice-chain", action="store_true",
+                    help="skip the voice chain (denoise 100, enhance-voice 100, loudness); the user wants it on every clip, "
+                         "so only use this for a test")
     ap.add_argument("--preview", default="", help="comma separated times to render as PNGs next to the project")
     ap.add_argument("--export", help="mp4 path to export, under the home folder")
     ap.add_argument("--remap", action="store_true",
@@ -95,9 +99,12 @@ def main() -> None:
             {"tool": "clips_move", "args": {"path": proj, "moves": [
                 {"clipId": f"${cid}.createdId", "start": round(s["edited_start"], 3), "trackId": "T1"}]}},
         ]
-        if a.voice_target is not None:
+        if not a.no_voice_chain:
+            # always on, in this order: noise reduction, voice enhancement, loudness (see house-style.md)
             steps.append({"tool": "clip_update", "args": {"path": proj, "clipId": f"${cid}.createdId", "patch": {
-                "filters": [{"id": "concat.loudness", "params": {"target": a.voice_target}}]}}})
+                "filters": [{"id": "concat.denoise", "params": {"strength": 100}},
+                            {"id": "concat.enhance-voice", "params": {"amount": 100}},
+                            {"id": "concat.loudness", "params": {"target": a.voice_target}}]}}})
 
     if a.punches:
         for n, p in enumerate(json.loads(a.punches.read_text())):

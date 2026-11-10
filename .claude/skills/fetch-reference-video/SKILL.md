@@ -11,6 +11,7 @@ Claude cannot open a video link and watch it. The route is: link -> file on disk
 
 - The user pasting a link and asking to look at it is the permission to download **that video**. Do not fetch anything else, and do not download whole profiles or playlists.
 - Needs `yt-dlp` and `ffmpeg`. If `yt-dlp` is missing, say so and ask before installing (`brew install yt-dlp`, a few MB). Sites change often: if a download starts failing with an extractor error, `brew upgrade yt-dlp` first.
+- A link to a lesson page of a private course (login needed) is not a video link: use `fetch-course-lesson-video` to open it in the user's Chrome and find the real video link, then come back here with that link.
 - Never pass `--cookies-from-browser` on your own. It uses the user's signed-in session; ask first, say which browser, and only when the site refuses a public link.
 
 ## Run it

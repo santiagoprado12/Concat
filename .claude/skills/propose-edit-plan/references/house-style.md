@@ -1,5 +1,35 @@
 # House style (learned from two vertical talking-head reels, one list-builds-up reel and one split-screen two-character reel)
 
+## Our style in one page (read this first; start every new video from it)
+
+What the user has approved or insisted on across four videos. These are defaults: **use them first, and ask before departing from any of them.** The sections below hold the exact numbers per video.
+
+**Look**
+- Vertical 1080x1920, 30 fps, hard cuts, no transitions, no punch-ins, no music by default. Clean and quiet: the picture is the people and a few well-placed graphics.
+- Colour neutral to cool and slightly dark; never warmer or brighter than the raw footage without asking. Match two shots of the same room (white balance) so a seam or a cut never shows.
+- Crop in a little (zoom about 1.1) to hide feet, floors and clutter, rather than showing the whole room.
+
+**Text and graphics**
+- Calm sans-serif (Open Sans regular is the current favourite; Hanken Grotesk and DM Serif Display are the bundled alternatives), no bold, soft shadow, **no background plate on captions**. White on dark parts, espresso `#2B221E` on light walls; check contrast per zone before choosing.
+- Palette: espresso `#2B221E`, cream `#F4EFD0`, mauve `#8E5E67`, blush `#E8D5D0`, sand `#D9C9B6`, taupe `#B49A85`.
+- Title in two lines above the people's heads; small plates (one per person) with the label; "VS" between them when it is a comparison. Captions one word at a time (or phrases of 2 to 4 words in talking-head reels), written by hand from the script, centred where they cover nobody.
+- Images that illustrate what is said (cards): bottom and centred, medium size, rising 10 % and fading in over 0.22 s, a hard cut out, a transparent PNG for objects, a mirrored copy when the same object appears twice. Never over a face, never over a caption. No emoji floating around the title (the user tried three and removed them).
+
+**Sound**
+- Voice cleaned and loud: ffmpeg high-pass and `afftdn` on the raw, then Concat `denoise` 100, `enhance-voice` 100, `loudness` -16, in that order on every clip.
+- Only the eight approved effects (`replicate-style-in-concat/sounds/`, with when to use each), very low under the voice: the soft swish when an image enters, the drop and confirmation sounds for list rows.
+
+**Cuts and performance**
+- One clip per phrase, the last good take of each line (unless it opens with her reading), each cut ending after the word dies away and starting with no dead air; no long pauses between phrases.
+- **A person must always look alive and at the camera or the person who is speaking**: never reading a script, leaning, touching face or hair, or mouthing words. Cuts must be invisible (similar pose, still moment, measured difference under about 9). Slow motion only where the person is still, never below 0.5x unless nothing else works; repeated footage must not be obvious.
+- A moment the user already called "perfecto" is locked: never change it while fixing something else.
+
+**Working with the user**
+- Spanish, short messages, on a phone: review renders small (540x960, crf 34), full quality only after "me gusta"; they answer with screenshots and a second each: fix those and re-check the frames around them.
+- Propose first on a canvas and wait for approval; list the missing resources per moment with its time; ask before downloading, installing, uploading or deleting anything; Trash, never `rm`.
+- Say what was measured and what was only seen in frames (they can hear and see what Claude cannot), and count the available footage against what the plan needs before promising a format.
+
+
 Both reels are one person talking to camera, cut hard, with cutaways. This is what was measured or approved. Sizes are fractions of the frame height; Concat renders the listed fonts.
 
 ## Picture

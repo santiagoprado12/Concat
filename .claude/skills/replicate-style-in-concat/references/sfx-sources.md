@@ -1,6 +1,6 @@
 # Sound effect sources (open licences)
 
-Concat's own sound library is not published (`https://raw.githubusercontent.com/concatapp/assets/main/audio/manifest.json` returned 404 on 2026-10-23 and again on 2026-11-03). These two sets are CC0, small, and were verified to download and convert. **Ask the user before downloading**; keep each archive in its own new folder under `~/concat-analysis/sfx/` and never commit audio to the repo.
+Concat's own sound library is not published (`https://raw.githubusercontent.com/concatapp/assets/main/audio/manifest.json` returned 404 on 2026-10-23 and again on 2026-11-03). These two sets are CC0, small, and were verified to download and convert. **Ask the user before downloading**; keep each archive in its own new folder under `~/concat-analysis/sfx/` and never commit audio to the repo, **except the eight approved sounds, which are kept in `../sounds/` with their usage guide** (`sounds/README.md`).
 
 | Set | Author / source | Licence | Size | Use |
 | --- | --- | --- | --- | --- |

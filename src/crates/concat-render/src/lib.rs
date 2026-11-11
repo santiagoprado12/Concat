@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// SPDX-FileCopyrightText: 2026 Jareer Abdullah and Concat contributors
+// SPDX-FileCopyrightText: 2026 Jareer Abdullah
 
 //! Turning a timeline plus a timestamp into one finished frame.
 //!
@@ -26,9 +26,10 @@ pub mod plan;
 mod reference;
 #[cfg(test)]
 mod transitions;
+pub mod upscale;
 
-pub use compositor::Compositor;
-pub use gpu::WgpuCompositor;
+pub use compositor::{Compositor, Drawn};
+pub use gpu::{ForgedShader, ShaderForge, WgpuCompositor};
 pub use metrics::ssim;
 pub use plan::{
     Backdrop, Crop, FramePlan, Geometry, PlannedLayer, PlannedTreatment, Shading, Transition, Warp,

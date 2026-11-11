@@ -94,6 +94,7 @@ fn picture(path: &Path, rate: FrameRate, seconds: u32, codec: VideoCodec) {
         color_range: concat_media::ColorRange::Limited,
         hardware: false,
         threads: 0,
+        software_only: false,
     };
     let mut encoder =
         Encoder::create(path, WIDTH, HEIGHT, rate, &options).expect("the linked FFmpeg encodes");
@@ -126,6 +127,7 @@ fn quadrants(path: &Path) {
         color_range: concat_media::ColorRange::Limited,
         hardware: false,
         threads: 0,
+        software_only: false,
     };
     let mut encoder = Encoder::create(path, WIDTH, HEIGHT, FrameRate::THIRTY, &options)
         .expect("the linked FFmpeg encodes");
@@ -188,6 +190,7 @@ fn clock_aac(wav: &Path, path: &Path, seconds: u32) {
         duration: f64::from(seconds),
         source_start: 0.0,
         speed: 1.0,
+        tempo: Vec::new(),
         preserve_pitch: true,
         volume: 1.0,
         volume_curve: GainTrack::default(),
@@ -474,6 +477,7 @@ impl Studio {
             video.height,
             video.rate_num,
             video.rate_den,
+            [0, 0, 0, 255],
         )
         .expect("creates the project");
         let session = Session::open_info(&info).expect("opens the project");
@@ -650,6 +654,7 @@ fn effect(id: &str) -> AppliedFilter {
 
 fn video(width: u32, height: u32, rate_num: i64, rate_den: i64) -> VideoSettings {
     VideoSettings {
+        canvas: [0, 0, 0, 255],
         width,
         height,
         rate_num,
@@ -894,6 +899,7 @@ fn a_background_fills_the_bars_in_the_export_and_the_monitor() {
     ];
     let monitor = |studio: &Studio| {
         let request = concat_export::PreviewFrameRequest {
+            canvas: [0, 0, 0, 255],
             time: 1.0,
             width,
             height,
@@ -1022,6 +1028,7 @@ fn solid(path: &Path, colour: [u8; 3]) {
         color_range: concat_media::ColorRange::Limited,
         hardware: false,
         threads: 0,
+        software_only: false,
     };
     let mut encoder = Encoder::create(path, WIDTH, HEIGHT, FrameRate::THIRTY, &options)
         .expect("the linked FFmpeg encodes");
@@ -1103,13 +1110,30 @@ fn fades_and_wipes_reach_the_picture() {
         studio.export(&format!("transition {kind}"))
     };
 
-    // The wipes overlap the two clips for the second centred on the cut.
-    let wiped = with(&mut studio, "wipe-left");
-    wiped.expect_colours(0.5, &[((0.5, 0.5), red)]);
-    wiped.expect_colours(2.0, &[((0.2, 0.5), red), ((0.8, 0.5), blue)]);
-    wiped.expect_colours(2.9, &[((0.5, 0.5), blue)]);
-    let wiped = with(&mut studio, "wipe-right");
-    wiped.expect_colours(2.0, &[((0.2, 0.5), blue), ((0.8, 0.5), red)]);
+    // The wipes overlap the two clips for the second centred on the cut:
+    // halfway, one picture on one side and the other on the other. Which
+    // side is the package's (#621: every transition runs through its
+    // package, and the old names are its aliases); that they are the two
+    // pictures, and not a dissolve of them, is what this pins.
+    let near = |got: [u8; 3], want: [u8; 3]| {
+        got.iter()
+            .zip(want)
+            .all(|(got, want)| (i16::from(*got) - i16::from(want)).abs() <= 40)
+    };
+    for kind in ["wipe-left", "wipe-right"] {
+        let wiped = with(&mut studio, kind);
+        wiped.expect_colours(0.5, &[((0.5, 0.5), red)]);
+        let (left, right) = (
+            wiped.colour_at_point(2.0, 0.1, 0.5),
+            wiped.colour_at_point(2.0, 0.9, 0.5),
+        );
+        let one_or_other = |got: [u8; 3]| near(got, red) || near(got, blue);
+        assert!(
+            one_or_other(left) && one_or_other(right) && near(left, red) != near(right, red),
+            "{kind} halfway: the two pictures side by side, not {left:?} and {right:?}"
+        );
+        wiped.expect_colours(2.9, &[((0.5, 0.5), blue)]);
+    }
 
     // The fades split the second across the cut, and do not overlap.
     for (kind, colour) in [("fade-black", [0, 0, 0]), ("fade-white", [255, 255, 255])] {
@@ -1152,16 +1176,24 @@ fn an_hlg_clip_exports_through_the_gpu_conversion() {
             color_range: concat_media::ColorRange::Limited,
             hardware: false,
             threads: 0,
+            software_only: false,
         };
-        let mut encoder = Encoder::create_mislabelled_hdr(
+        let encoder = Encoder::create_mislabelled_hdr(
             &path,
             WIDTH,
             HEIGHT,
             FrameRate::THIRTY,
             &options,
             false,
-        )
-        .expect("an HEVC encoder");
+        );
+        let mut encoder = match encoder {
+            Ok(encoder) => encoder,
+            Err(error) if VideoCodec::Hevc.ten_bit_only_on_hardware() => {
+                eprintln!("no ten-bit HEVC encoder opens here ({error}); skipped");
+                return;
+            }
+            Err(error) => panic!("an HEVC encoder: {error}"),
+        };
         let mut frame = Frame::black(WIDTH, HEIGHT);
         frame.fill([160, 160, 160, 255]);
         for _ in 0..30 {
@@ -1211,17 +1243,25 @@ fn an_hlg_timeline_exports_as_hdr_or_sdr() {
         color_range: concat_media::ColorRange::Limited,
         hardware: false,
         threads: 0,
+        software_only: false,
     };
     {
-        let mut encoder = Encoder::create_hdr(
+        let encoder = Encoder::create_hdr(
             &path,
             WIDTH,
             HEIGHT,
             FrameRate::THIRTY,
             &options,
             Signal::Hlg,
-        )
-        .expect("an HEVC encoder");
+        );
+        let mut encoder = match encoder {
+            Ok(encoder) => encoder,
+            Err(error) if VideoCodec::Hevc.ten_bit_only_on_hardware() => {
+                eprintln!("no ten-bit HEVC encoder opens here ({error}); skipped");
+                return;
+            }
+            Err(error) => panic!("an HEVC encoder: {error}"),
+        };
         let value = (LEVEL * 65_535.0).round() as u16;
         let pixel: Vec<u8> = [value, value, value, u16::MAX]
             .iter()
@@ -1720,6 +1760,7 @@ fn every_edit_still_exports() {
             duration: Some(3.0),
             effect_id: "concat.glow".to_owned(),
             name: "Glow".to_owned(),
+            sound: false,
         });
         let exported = studio.export("layer");
         exported.expect_length(end);
@@ -1975,7 +2016,24 @@ fn an_export_decodes_on_the_hardware_when_preferred() {
     let scratch = Scratch::new("hardware");
     // HEVC, not the H.264 the other scenarios use: 8-bit H.264 is the one
     // stream the preference leaves on the CPU, which decodes it faster
-    // (concat_media::hardware::hardware_wins).
+    // (concat_media::hardware::hardware_wins). HEVC on the CPU is Kvazaar
+    // since x265 left the builds, which takes sizes in eights only, so on
+    // a machine with no chip for it this clip's 90 rows have no encoder.
+    let can_encode = Encoder::create(
+        scratch.path().join("can-encode.mp4"),
+        WIDTH,
+        HEIGHT,
+        FrameRate::THIRTY,
+        &EncodeOptions {
+            codec: VideoCodec::Hevc,
+            preset: "ultrafast".to_owned(),
+            ..EncodeOptions::default()
+        },
+    );
+    if let Err(error) = can_encode {
+        eprintln!("no HEVC encoder opens at {WIDTH}x{HEIGHT} here ({error}); skipped");
+        return;
+    }
     let sources = Sources::make_in(scratch.path(), VideoCodec::Hevc);
 
     if let Some(device) = HwDevice::platform_default() {
@@ -2057,6 +2115,96 @@ fn an_export_decodes_on_the_hardware_when_preferred() {
         exported.expect_tone(5.5);
         exported.expect_quiet(4.5);
     }
+}
+
+/// A sound layer over two seconds of the clock changes the export's sound
+/// there and nowhere else. Two clips sound under it, the clock and a
+/// second copy of it a lane up, so what it treats is their sum. The tone
+/// of the clock's third second, inside the layer, comes out of the
+/// low-pass changed; its first and fifth, either side, are what an export
+/// without the layer has, give or take what the encoder does near the
+/// layer's edges. Muting the layer's lane takes it off.
+#[test]
+fn a_sound_layer_treats_the_mix_for_its_span_alone() {
+    let scratch = Scratch::new("sound-layer");
+    let wav = scratch.path().join("clock.wav");
+    clock_wav(&wav, 6);
+    let mut studio = Studio::new(scratch.path(), "Sound layer", video(WIDTH, HEIGHT, 30, 1));
+    let clock = studio.import(&wav);
+    let lanes: Vec<String> = studio
+        .project()
+        .active()
+        .tracks
+        .iter()
+        .map(|track| track.id.clone())
+        .collect();
+    for lane in &lanes[..2] {
+        studio.apply(Command::AddClip {
+            media_id: clock.clone(),
+            track_id: lane.clone(),
+            start: 0.0,
+            ripple: false,
+        });
+    }
+    let plain = studio.export("no layer");
+    plain.expect_sound(6.0);
+
+    let layer = studio
+        .apply(Command::AddLayerClip {
+            track_id: None,
+            start: 2.0,
+            duration: Some(2.0),
+            effect_id: "concat.underwater".to_owned(),
+            name: "Underwater".to_owned(),
+            sound: true,
+        })
+        .expect("a layer has an id");
+    let treated = studio.export("sound layer");
+    treated.expect_length(6.0);
+    treated.expect_sound(6.0);
+
+    // How far apart two exports' sound is over `[from, to)`, as the root
+    // mean square of their difference.
+    let apart = |a: &Exported, b: &Exported, from: f64, to: f64| {
+        let (a, b) = (
+            a.audio.as_ref().expect("sound"),
+            b.audio.as_ref().expect("sound"),
+        );
+        let at = |seconds: f64| (seconds * f64::from(RATE)) as usize * 2;
+        let range = at(from)..at(to).min(a.len()).min(b.len());
+        let count = range.len().max(1) as f64;
+        let sum: f64 = range
+            .map(|index| (f64::from(a[index]) - f64::from(b[index])).powi(2))
+            .sum();
+        (sum / count).sqrt()
+    };
+    let inside = apart(&plain, &treated, 3.1, 3.9);
+    let before = apart(&plain, &treated, 1.1, 1.9);
+    let after = apart(&plain, &treated, 5.1, 5.9);
+    eprintln!("sound layer: {inside:.4} inside, {before:.4} before, {after:.4} after");
+    assert!(
+        inside > 0.1,
+        "the layer's span is {inside:.4} from the plain mix"
+    );
+    assert!(
+        before < 0.01,
+        "before the layer the mix moved by {before:.4}"
+    );
+    assert!(after < 0.01, "after the layer the mix moved by {after:.4}");
+    // The tone is still there to treat: a filter, not a mute.
+    treated.expect_tone(1.5);
+    treated.expect_tone(5.5);
+
+    // A muted lane silences the layer as it silences a clip.
+    let lane = studio.clip(&layer).track_id.clone();
+    studio.apply(Command::SetTrackFlag {
+        track_id: lane,
+        flag: TrackFlag::Muted,
+        value: true,
+    });
+    let muted = studio.export("sound layer muted");
+    let off = apart(&plain, &muted, 3.1, 3.9);
+    assert!(off < 0.01, "a muted layer still moved the mix by {off:.4}");
 }
 
 /// A reversed copy of a span plays its seconds backwards, picture and

@@ -180,18 +180,24 @@ pub(crate) struct BuiltTimeline {
     pub(crate) stabilized: HashMap<ClipId, StabilizeJob>,
 }
 
-/// A packaged transition over a cut. The incoming clip has been overlapped
-/// onto the outgoing one and moved to `to_track`; over `[start, end)` the
-/// compositor combines the stack below `to_track` (the outgoing picture) with
-/// the incoming layer through the package's two-input shader. A machine with
-/// no GPU shows the dissolve the incoming clip already carries instead.
+/// A transition, as the compositor draws it: over `[start, end)`, the
+/// stack beneath `track` drawn twice - as it is before the cut, `from`'s
+/// clips in it and `to`'s left out, and as it is after, the other way
+/// round - and the two combined through the package's two-input shader.
+/// With no cut under it both sets are empty and the two pictures are the
+/// same. A machine with no GPU dissolves between them instead.
 #[derive(Clone, Debug)]
 pub(crate) struct TransitionSpan {
     pub(crate) start: Rational,
     pub(crate) end: Rational,
-    pub(crate) to_track: usize,
+    pub(crate) track: usize,
     pub(crate) id: String,
     pub(crate) params: BTreeMap<String, f64>,
+    /// The outgoing side's clips: the clip before the cut and its stand-in
+    /// after it. Filled in as the timeline is built.
+    pub(crate) from: std::collections::HashSet<ClipId>,
+    /// The incoming side's: the clip after the cut and its stand-in before.
+    pub(crate) to: std::collections::HashSet<ClipId>,
 }
 
 impl TransitionSpan {
@@ -262,9 +268,10 @@ pub(crate) fn build_timeline(
     request: &ExportRequest,
     rate: FrameRate,
     visible: &[&ExportClip],
-    transitions: Vec<TransitionSpan>,
+    mut transitions: Vec<TransitionSpan>,
 ) -> BuiltTimeline {
     let mut timeline = Timeline::new(request.width, request.height, rate);
+    timeline.canvas = request.canvas;
     let mut stills = std::collections::HashSet::new();
     let mut decode_sizes: HashMap<ClipId, (u32, u32)> = HashMap::new();
     let mut tracks_of: HashMap<ClipId, usize> = HashMap::new();
@@ -323,8 +330,10 @@ pub(crate) fn build_timeline(
             engine_clip.retime = clip.retime();
         }
         engine_clip.animation = animation_of(&clip.animation);
+        engine_clip.motion = clip.motion.as_ref().and_then(|motion| motion.engine());
         engine_clip.blend = concat_core::timeline::Blend::parse(&clip.blend);
-        engine_clip.mask = clip.mask.map(|mask| mask.engine());
+        engine_clip.masks = clip.masks.iter().map(Mask::engine).collect();
+        engine_clip.overscan = overscan_of(clip);
         engine_clip.transform = Transform {
             scale: clip.scale,
             offset_x: clip.offset_x,
@@ -339,7 +348,17 @@ pub(crate) fn build_timeline(
         engine_clip.video_fade_in = quantise(clip.video_fade_in, rate);
 
         if let Some(id) = timeline.add_clip(tracks[clip.track], engine_clip) {
-            tracks_of.insert(id, clip.track);
+            // A stand-in is stacked where the clip it extends is.
+            tracks_of.insert(id, clip.stack_at.unwrap_or(clip.track));
+            for &(span, incoming) in &clip.roles {
+                if let Some(span) = transitions.get_mut(span) {
+                    if incoming {
+                        span.to.insert(id);
+                    } else {
+                        span.from.insert(id);
+                    }
+                }
+            }
             if clip.kind == ClipKind::Image {
                 stills.insert(id);
             }
@@ -468,7 +487,7 @@ pub(crate) fn animation_of(keys: &[ExportKey]) -> Option<Animation> {
     if keys.is_empty() {
         return None;
     }
-    let mut tracks: [Vec<Key>; 13] = Default::default();
+    let mut tracks: [Vec<Key>; 6] = Default::default();
     for key in keys {
         let slot = match key.property.as_str() {
             "scale" => 0,
@@ -477,13 +496,6 @@ pub(crate) fn animation_of(keys: &[ExportKey]) -> Option<Animation> {
             "rotation" => 3,
             "opacity" => 4,
             "volume" => 5,
-            "maskX" => 6,
-            "maskY" => 7,
-            "maskWidth" => 8,
-            "maskHeight" => 9,
-            "maskRotation" => 10,
-            "maskRoundness" => 11,
-            "maskFeather" => 12,
             _ => continue,
         };
         let [x1, y1, x2, y2] = key.ease;
@@ -493,21 +505,7 @@ pub(crate) fn animation_of(keys: &[ExportKey]) -> Option<Animation> {
             ease: Ease::new(x1, y1, x2, y2),
         });
     }
-    let [
-        scale,
-        x,
-        y,
-        rotation,
-        opacity,
-        volume,
-        mask_x,
-        mask_y,
-        mask_width,
-        mask_height,
-        mask_rotation,
-        mask_roundness,
-        mask_feather,
-    ] = tracks;
+    let [scale, x, y, rotation, opacity, volume] = tracks;
     let animation = Animation {
         scale: Track::new(scale),
         offset_x: Track::new(x),
@@ -515,15 +513,6 @@ pub(crate) fn animation_of(keys: &[ExportKey]) -> Option<Animation> {
         rotation: Track::new(rotation),
         opacity: Track::new(opacity),
         volume: Track::new(volume),
-        mask: concat_core::animate::MaskTracks {
-            x: Track::new(mask_x),
-            y: Track::new(mask_y),
-            width: Track::new(mask_width),
-            height: Track::new(mask_height),
-            rotation: Track::new(mask_rotation),
-            roundness: Track::new(mask_roundness),
-            feather: Track::new(mask_feather),
-        },
     };
     (!animation.is_empty()).then_some(animation)
 }
@@ -555,7 +544,8 @@ pub(crate) fn fitted_size(
     };
 
     let fit = (f64::from(request.width) / f64::from(media_width))
-        .min(f64::from(request.height) / f64::from(media_height));
+        .min(f64::from(request.height) / f64::from(media_height))
+        * overscan_of(clip);
     let (fit_width, fit_height) = if whole {
         (source_width, source_height)
     } else {
@@ -566,6 +556,16 @@ pub(crate) fn fitted_size(
     // Even, because a decoder asked for an odd width may round it itself and
     // then every frame read is misaligned by a pixel's worth of bytes.
     Some((width & !1, height & !1))
+}
+
+/// The clip's overscan, held to what it can mean: one, or more for a
+/// picture several frames across; a number that is not one is one.
+fn overscan_of(clip: &ExportClip) -> f64 {
+    if clip.overscan.is_finite() {
+        clip.overscan.max(1.0)
+    } else {
+        1.0
+    }
 }
 
 pub(crate) fn quantise(seconds: f64, rate: FrameRate) -> Rational {

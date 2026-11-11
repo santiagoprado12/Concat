@@ -20,13 +20,22 @@ pub struct VideoStream {
     pub index: u32,
     /// Codec short name, for example `h264`.
     pub codec: String,
-    /// Displayed width in pixels: the coded width, swapped with the height
-    /// when the stream carries a quarter-turn display rotation.
+    /// Displayed width in pixels: the coded width stretched to square
+    /// pixels where the stream's are not (HDV, DV), then swapped with the
+    /// height when the stream carries a quarter-turn display rotation.
     pub width: u32,
     /// Displayed height in pixels; see [`VideoStream::width`].
     pub height: u32,
     /// Average frame rate, exact.
     pub frame_rate: FrameRate,
+    /// The rate one frame can follow another at: the frame rate for a
+    /// constant-rate stream. A variable-rate one - a screen recording, a
+    /// phone clip - runs at its capture rate while the picture moves and
+    /// holds still between, so its average is well under the rate its
+    /// frames come at while they come; its cadence is the grid its
+    /// timestamps sit on, where that is a rate a camera or a screen records
+    /// at. What a reader indexes frames by, so no two land on one slot.
+    pub cadence: FrameRate,
     /// The levels the stream says its numbers span, or `None` where it
     /// says nothing - which a player then takes for video range. What a
     /// person compares the picture against when it looks washed out.
@@ -34,6 +43,16 @@ pub struct VideoStream {
     /// What the stream's tags say its picture is: HLG or PQ by its
     /// transfer, a wide SDR by its primaries, SDR where they say nothing.
     pub signal: Signal,
+    /// Where the stream's keyframes are, in order, in seconds from the
+    /// file's own start (see `ffi::origin`), as the container's index has
+    /// them: the pictures a seek can show without decoding any other.
+    /// Empty where the container keeps no index - MPEG-TS and MPEG-PS -
+    /// and for a stream every frame of which is one. The times are the
+    /// index's: the decode timestamp where the container keeps no other,
+    /// up to a frame or two before the picture's own on a stream with
+    /// B-frames. A scrub reads them to find the nearest picture it can
+    /// show at once; see `ReaderPool::frame_nearest`.
+    pub keyframes: std::sync::Arc<[Rational]>,
 }
 
 /// What an audio stream looks like.
@@ -98,8 +117,9 @@ pub fn probe(path: impl AsRef<Path>) -> Result<MediaInfo> {
     let duration =
         (duration > 0).then(|| Rational::new(duration, i64::from(ffmpeg::sys::AV_TIME_BASE)));
 
+    let origin = ffi::origin(&input);
     let video = match input.streams().best(ffmpeg::media::Type::Video) {
-        Some(stream) => Some(video_stream(&stream, path)?),
+        Some(stream) => Some(video_stream(&stream, path, origin)?),
         None => None,
     };
     let audio_streams: Vec<AudioStream> = input
@@ -162,7 +182,11 @@ pub(crate) fn audio_stream_index(
     input.streams().find(is_audio).map(|stream| stream.index())
 }
 
-fn video_stream(stream: &ffmpeg::format::stream::Stream<'_>, path: &Path) -> Result<VideoStream> {
+fn video_stream(
+    stream: &ffmpeg::format::stream::Stream<'_>,
+    path: &Path,
+    origin: Rational,
+) -> Result<VideoStream> {
     let parameters = stream.parameters();
     let (width, height) = (parameters.width(), parameters.height());
     if width == 0 || height == 0 {
@@ -171,13 +195,19 @@ fn video_stream(stream: &ffmpeg::format::stream::Stream<'_>, path: &Path) -> Res
             detail: "video stream has no usable size".to_owned(),
         });
     }
-    let (width, height) = ffi::displayed(width, height, ffi::rotation(stream));
+    let (width, height) = ffi::displayed(
+        width,
+        height,
+        ffi::sample_aspect(stream),
+        ffi::rotation(stream),
+    );
 
     let frame_rate = pick_rate(rational(stream.avg_frame_rate()), rational(stream.rate()))
         .ok_or_else(|| Error::Probe {
             path: path.to_path_buf(),
             detail: "video stream has no usable frame rate".to_owned(),
         })?;
+    let cadence = pick_cadence(frame_rate, rational(stream.rate()));
 
     // SAFETY: the parameters are live for as long as `stream` is, and the
     // range, the transfer and the primaries are plain fields libavformat
@@ -201,9 +231,39 @@ fn video_stream(stream: &ffmpeg::format::stream::Stream<'_>, path: &Path) -> Res
         width,
         height,
         frame_rate: FrameRate::new(frame_rate),
+        cadence: FrameRate::new(cadence),
         color_range: ColorRange::from_ffmpeg(ffmpeg::color::Range::from(range)),
         signal,
+        keyframes: keyframes(stream, origin),
     })
+}
+
+/// The stream's keyframes from its container's index, in order; see
+/// [`VideoStream::keyframes`]. An index whose every entry is a keyframe -
+/// an intra-only codec, or a container that lists only the keyframes it
+/// can seek to and marks them all - says nothing a scrub can use beyond
+/// the frame times themselves, and is kept as it is.
+fn keyframes(
+    stream: &ffmpeg::format::stream::Stream<'_>,
+    origin: Rational,
+) -> std::sync::Arc<[Rational]> {
+    let time_base = stream.time_base();
+    // SAFETY: the stream belongs to an input open for this call; the index
+    // is libavformat's own array, read by position below the count it
+    // reports, and nothing adds to it while the input is not read.
+    unsafe {
+        let raw = stream.as_ptr().cast_mut();
+        let count = ffmpeg::sys::avformat_index_get_entries_count(raw);
+        (0..count)
+            .filter_map(|at| {
+                let entry = ffmpeg::sys::avformat_index_get_entry(raw, at).as_ref()?;
+                (entry.flags() & ffmpeg::sys::AVINDEX_KEYFRAME != 0)
+                    .then(|| ffi::seconds(entry.timestamp, time_base))
+                    .flatten()
+                    .map(|at| at - origin)
+            })
+            .collect()
+    }
 }
 
 fn rational(value: ffmpeg::Rational) -> Option<Rational> {
@@ -256,9 +316,46 @@ fn pick_rate(average: Option<Rational>, guess: Option<Rational>) -> Option<Ratio
     }
 }
 
+/// The rate a stream's frames come at while they come; see
+/// [`VideoStream::cadence`].
+///
+/// `rate` is what [`pick_rate`] chose. Where the timestamp grid beside it
+/// is faster by more than the two percent `pick_rate` forgives - the
+/// stream is variable - and is itself a rate a picture is captured at, no
+/// faster than 240 fps, the grid is the cadence: a screen recording at 60
+/// whose still stretches bring the average to 23. A grid past that is a
+/// clock's denominator - 90000 for #394's recording - and says nothing
+/// about the frames, so the rate stands.
+fn pick_cadence(rate: Rational, grid: Option<Rational>) -> Rational {
+    grid.filter(|grid| FrameRate::checked(grid.numerator(), grid.denominator()).is_some())
+        .filter(|grid| grid.as_f64() <= 240.0 && grid.as_f64() > rate.as_f64() * 1.02)
+        .unwrap_or(rate)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A variable-rate stream's frames are indexed at the grid they come
+    /// on, not its average; a grid that is a clock's denominator, or a
+    /// constant stream, keeps the rate.
+    #[test]
+    fn a_variable_stream_is_paced_by_its_timestamp_grid() {
+        let sixty = Rational::from_int(60);
+        let average = Rational::new(4620, 179);
+        assert_eq!(pick_cadence(average, Some(sixty)), sixty);
+        assert_eq!(
+            pick_cadence(average, Some(Rational::from_int(90_000))),
+            average
+        );
+        let thirty = Rational::from_int(30);
+        assert_eq!(pick_cadence(thirty, Some(thirty)), thirty);
+        assert_eq!(pick_cadence(thirty, None), thirty);
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/vfr-still-screen.mp4");
+        let video = probe(path).expect("probes").video.expect("a picture");
+        assert!(video.frame_rate.fps().as_f64() < 10.0, "the average is low");
+        assert_eq!(video.cadence, FrameRate::THIRTY);
+    }
 
     #[test]
     fn falls_back_when_avg_frame_rate_is_zero() {
@@ -353,6 +450,7 @@ mod tests {
             color_range: crate::ColorRange::Limited,
             hardware: false,
             threads: 0,
+            software_only: false,
         };
         let rate = FrameRate::from_int(25);
         for (name, hdr, want) in [
@@ -361,11 +459,18 @@ mod tests {
             ("pq.mp4", Some(true), Signal::Pq),
         ] {
             let path = dir.join(name);
-            let mut encoder = match hdr {
+            let encoder = match hdr {
                 None => Encoder::create(&path, 64, 64, rate, &options),
                 Some(pq) => Encoder::create_mislabelled_hdr(&path, 64, 64, rate, &options, pq),
-            }
-            .expect("encodes");
+            };
+            let mut encoder = match encoder {
+                Ok(encoder) => encoder,
+                Err(error) if hdr.is_some() && VideoCodec::Hevc.ten_bit_only_on_hardware() => {
+                    eprintln!("{name}: no ten-bit HEVC encoder opens here ({error}); skipped");
+                    continue;
+                }
+                Err(error) => panic!("{name} encodes: {error}"),
+            };
             for _ in 0..3 {
                 encoder.write_frame(&Frame::black(64, 64)).expect("writes");
             }

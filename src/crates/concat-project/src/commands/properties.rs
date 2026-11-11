@@ -62,8 +62,11 @@ pub(super) fn apply(
                 let crop = crop.map(Crop::tidy).filter(|crop| !crop.is_none());
                 applied |= assign(&mut clip.crop, crop);
             }
-            if let Some(mask) = patch.mask {
-                applied |= assign(&mut clip.mask, mask.map(ClipMask::tidy));
+            if let Some(masks) = patch.masks {
+                applied |= assign(&mut clip.masks, Mask::tidy_all(masks));
+            }
+            if let Some(motion) = patch.motion {
+                applied |= assign(&mut clip.motion, motion.and_then(ClipMotion::tidy));
             }
             if let Some(filters) = patch.filters {
                 applied |= assign(&mut clip.filters, filters);
@@ -81,6 +84,11 @@ pub(super) fn apply(
                 }
                 applied |= assign(&mut clip.text, text);
             }
+            if let Some(shape) = patch.shape
+                && clip.kind == crate::model::ClipKind::Shape
+            {
+                applied |= assign(&mut clip.shape, Some(shape.tidy()));
+            }
             if let Some(stream) = patch.audio_stream {
                 applied |= assign(&mut clip.audio_stream, stream);
             }
@@ -90,6 +98,54 @@ pub(super) fn apply(
             Ok(Outcome {
                 created_id: None,
                 applied,
+            })
+        }
+
+        Command::StyleTextRange {
+            clip_id,
+            start,
+            end,
+            patch,
+        } => {
+            let Some(clip) = project.active_mut().clip_mut(&clip_id) else {
+                return Ok(Outcome::default());
+            };
+            if clip.kind != ClipKind::Text {
+                return Ok(Outcome::default());
+            }
+            let Some(text) = clip.text.as_mut() else {
+                return Ok(Outcome::default());
+            };
+            let before = text.runs.clone();
+            text.style_range(start, end, &patch);
+            Ok(Outcome {
+                created_id: None,
+                applied: text.runs != before,
+            })
+        }
+
+        Command::ClearTextStyles {
+            clip_id,
+            start,
+            end,
+        } => {
+            let Some(clip) = project.active_mut().clip_mut(&clip_id) else {
+                return Ok(Outcome::default());
+            };
+            if clip.kind != ClipKind::Text {
+                return Ok(Outcome::default());
+            }
+            let Some(text) = clip.text.as_mut() else {
+                return Ok(Outcome::default());
+            };
+            let before = text.runs.clone();
+            match (start, end) {
+                (Some(start), Some(end)) => text.clear_range(start, end),
+                _ => text.runs.clear(),
+            }
+            Ok(Outcome {
+                created_id: None,
+                applied: text.runs != before,
             })
         }
 
@@ -151,6 +207,22 @@ pub(super) fn apply(
             })
         }
 
+        Command::SetClipVoice { clip_id, voice } => {
+            let timeline = project.active_mut();
+            let Some(clip) = timeline.clip_mut(&clip_id) else {
+                return Ok(Outcome::default());
+            };
+            // Only what plays sound has a voice in it: footage and sound.
+            if !matches!(clip.kind, ClipKind::Video | ClipKind::Audio) && voice.is_some() {
+                return Ok(Outcome::default());
+            }
+            let applied = assign(&mut clip.voice, voice.map(VoiceMix::tidy));
+            Ok(Outcome {
+                created_id: None,
+                applied,
+            })
+        }
+
         Command::AddCutoutStroke { clip_id, stroke } => {
             let timeline = project.active_mut();
             let Some(clip) = timeline.clip_mut(&clip_id) else {
@@ -194,7 +266,6 @@ pub(super) fn apply(
                 // same value at a different instant.
                 KeyProperty::Volume => value.max(0.0),
                 KeyProperty::OffsetX | KeyProperty::OffsetY | KeyProperty::Rotation => value,
-                mask => ClipMask::clamp(mask, value),
             };
             let before = clip.keys.clone();
             clip.set_key(property, at, value, ease);
@@ -291,6 +362,68 @@ pub(super) fn apply(
                 return Ok(Outcome::default());
             };
             let applied = link.clear_keys(&key);
+            Ok(Outcome {
+                created_id: None,
+                applied,
+            })
+        }
+
+        Command::SetMaskKey {
+            clip_id,
+            mask_id,
+            number,
+            at,
+            value,
+            ease,
+        } => {
+            let timeline = project.active_mut();
+            let Some(mask) = timeline
+                .clip_mut(&clip_id)
+                .and_then(|clip| clip.masks.iter_mut().find(|mask| mask.id == mask_id))
+            else {
+                return Ok(Outcome::default());
+            };
+            let before = mask.keys.clone();
+            mask.set_key(&number, at, value, ease);
+            Ok(Outcome {
+                created_id: None,
+                applied: mask.keys != before,
+            })
+        }
+
+        Command::ClearMaskKey {
+            clip_id,
+            mask_id,
+            number,
+            at,
+        } => {
+            let timeline = project.active_mut();
+            let Some(mask) = timeline
+                .clip_mut(&clip_id)
+                .and_then(|clip| clip.masks.iter_mut().find(|mask| mask.id == mask_id))
+            else {
+                return Ok(Outcome::default());
+            };
+            let applied = mask.clear_key(&number, at);
+            Ok(Outcome {
+                created_id: None,
+                applied,
+            })
+        }
+
+        Command::ClearMaskKeys {
+            clip_id,
+            mask_id,
+            number,
+        } => {
+            let timeline = project.active_mut();
+            let Some(mask) = timeline
+                .clip_mut(&clip_id)
+                .and_then(|clip| clip.masks.iter_mut().find(|mask| mask.id == mask_id))
+            else {
+                return Ok(Outcome::default());
+            };
+            let applied = mask.clear_keys(&number);
             Ok(Outcome {
                 created_id: None,
                 applied,
@@ -449,6 +582,7 @@ fn make_room(timeline: &mut Timeline, clip_id: &str, old_end: f64, ripple: bool)
     let moved = start + duration - old_end;
     let pushed = moved > 0.0 && !timeline.is_free(&track_id, start, duration, &[clip_id]);
     if (ripple && moved != 0.0) || pushed {
+        let main = timeline.background_lane().map(str::to_owned);
         for other in timeline.clips_where(|other| {
             other.id != clip_id
                 && other.track_id == track_id
@@ -456,5 +590,16 @@ fn make_room(timeline: &mut Timeline, clip_id: &str, old_end: f64, ripple: bool)
         }) {
             other.start = (other.start + moved).max(0.0);
         }
+        // Linkage: sped up, the clip gave back the end of its old span;
+        // slowed down, it put more in at its old end.
+        let ripple = if moved < 0.0 {
+            clips::Ripple::Removed(vec![(old_end + moved, old_end)])
+        } else {
+            clips::Ripple::Inserted {
+                at: old_end,
+                length: moved,
+            }
+        };
+        clips::follow_main(timeline, main.as_deref(), &track_id, ripple);
     }
 }

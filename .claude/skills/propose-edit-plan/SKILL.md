@@ -5,6 +5,8 @@ description: Before editing a new raw video in Concat, analyze it and publish an
 
 # Proposing an edit before building it
 
+This is step 4 of `video-edit-playbook` (the whole process with its gates); read that first when the job is a new video.
+
 The agreed way of working with this user: **propose on a canvas, get decisions, then build with placeholders, then refine.** Nothing is cut in Concat until the proposal is approved. The proposal is a private design canvas (the Artifact tool with the Design type), written in the user's language.
 
 ## 1. Look at the video first

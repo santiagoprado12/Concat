@@ -23,6 +23,13 @@ uv run $S/analyze.py all  /path/to/video.mp4 --out ~/concat-analysis/<name>/ref
 - `--cut 12` is the hard-cut sensitivity (frame-difference score 0-100). Lower it for soft footage with missed cuts, raise it for flashy footage with false cuts. `--gradual 3` controls dissolve detection.
 - Long videos: `--max-shots`, `--max-strips`, `--spec-seconds` keep the number of images readable.
 
+## Everyday helpers (use them all the time)
+
+- `frames_grid.py` - many frames (or existing pictures) in ONE labelled image: a frame every 0.1-0.5 s around a second the user named, 15 fps to see how an element appears, a face crop per candidate second, A/B/C/D options for the user.
+- `audio_peek.py` - sound as text: `env` (level every 20 ms), `silences`, `cuts` (level before each cut: still loud = cut during a word), `lead`/`tail` (dead air), `spec` (spectrogram picture), `tones` (a hum to filter).
+- `align_captions.py` - your corrected caption words on Whisper's times for one piece.
+- The full order of work and every trick: `video-edit-playbook` (`references/hacks.md`).
+
 ## What it writes and how to read it
 
 | File | What it is | How to use it |

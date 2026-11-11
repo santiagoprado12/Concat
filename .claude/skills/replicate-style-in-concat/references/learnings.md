@@ -2,6 +2,17 @@
 
 Newest first. Each entry says how it was found. Verified = run against the real app (Concat 0.2.8, macOS, debug build, headless MCP).
 
+## 2026-11-10: the process written down as a playbook (and what the first chat, "Reto videos día 1", added)
+
+A second Claude given the project did worse than the first, so everything was consolidated: `video-edit-playbook` (12 steps with gates, QA list, messages) and its `references/hacks.md` (catalogue of tricks by problem). New generic tools extracted from one-off scripts of the earlier sessions: `analyze-reference-video/scripts/frames_grid.py` (many frames or pictures in one labelled image), `audio_peek.py` (levels, silences, cut-end check, dead air, spectrogram, hum finder), `align_captions.py` (your caption words on Whisper times), `replicate-style-in-concat/scripts/make_reversed.py` (reverse and boomerang), and two example scripts (`examples/split_screen_gen.py`, `examples/listener_search.py`). Tested on a real export: grid of 9 frames, cut and silence checks, 8 of 12 words matched, boomerang of 1.5 s = 45 forward + 44 reversed frames.
+
+From the first chat of the series (the list reel, 2026-11-03/04), not recorded before:
+- **Referencing posts and reels:** both references were single shots, so the detector found no cuts; what mattered was *how each item appears*, read from consecutive frames at 15 fps in one image. Measure the pacing (a row per second, a round of 2.5-3 s) from those, to 0.5 s.
+- **Font identity:** the user named a CapCut font (True Fate). It is a paid script/serif font (Set Sail Studios); "free download" pages for CapCut fonts are the classic way to smuggle in dodgy files. A search that swept the whole disk was rejected by the user: search only the app's folder, or ask. Say what Concat does with a font it does not bundle (system fonts render by name here; they do not travel with the project).
+- **Auditioning sound and voice:** Claude cannot hear, so the user chooses by ear from numbered samples at one loudness (a voice says the number, then the sound twice; five voice-chain variants of one phrase). Their feedback was by number ("pops: el 0, el 1 y 7": check that the numbers they use exist in your list, the audio started at 1). Synthesized pops were rejected; recorded interface sounds from the CC0 packs were chosen.
+- **Exposure by examples:** four renders of one instant (A -1.0, B -0.7, C -0.4, D 0 EV) in one image; they chose D.
+- **Delete earlier versions only on request**, to the Trash, keeping `assets/` and the cleaned audio the project points to.
+
 ## 2026-11-07: a split-screen "two versions of one person" reel from two raw takes (77 s, 17 review rounds)
 
 One person recorded the same script twice as two characters, in the same room with a locked-off phone (each take about 4 minutes, a line repeated 2 to 6 times). The edit shows both at once, one half each, the speaker's half carries the voice and the other half listens. Built entirely through the MCP with one generator (`gen.py`-style, about 300-400 steps, 0 failures) and 17 versions; the user reviewed on a phone and answered with screenshots and timestamps. Everything below was verified in the app unless it says otherwise.

@@ -5,7 +5,7 @@ description: Rebuild an edit in Concat through its MCP server - lay the user's r
 
 # Replicating an edit in Concat
 
-Order of work: `propose-edit-plan` (canvas the user approves) -> `analyze-reference-video` -> `distill-editing-style` -> this skill. Companion skills: `analyze-reference-video` (turns videos into evidence), `distill-editing-style` (turns evidence into a profile). **Read `references/learnings.md` before starting and add to it after every session** - it holds what has been verified against the real app and is the main way this skill improves.
+**The standard step-by-step process (with gates and every trick) is `video-edit-playbook`: start there.** Order of work: `propose-edit-plan` (canvas the user approves) -> `analyze-reference-video` -> `distill-editing-style` -> this skill. Companion skills: `analyze-reference-video` (turns videos into evidence), `distill-editing-style` (turns evidence into a profile). **Read `references/learnings.md` before starting and add to it after every session** - it holds what has been verified against the real app and is the main way this skill improves.
 
 ## Connect to Concat
 
@@ -100,6 +100,14 @@ New projects have lanes `T1..T4`. **A higher lane number is drawn above a lower 
 ## Always on every voice clip
 
 Enable **noise cancellation and voice enhancement** on every clip that carries a voice, without waiting to be asked: `clip_update {clipId, patch: {"filters": [{"id": "concat.denoise", "params": {"strength": 100}}, {"id": "concat.enhance-voice", "params": {"amount": 100}}, {"id": "concat.loudness", "params": {"target": -16}}]}}`, in that order (loudness before enhance changes the sound). `build_steps.py` does it by default; a generator you write yourself must do it too. Before exporting, read `concat.json` back and check each voice clip lists the three filters; the user reminded us twice (once after hearing background noise in an export that already had them: the filters were present, and the noise was probably room echo or the maximum enhancement, so a reminder is a reason to re-check the saved project and the raw's noise floor, not only to re-apply).
+
+## Scripts and examples in this skill
+
+- `scripts/mcp_run.py` runs a steps file; `build_steps.py` builds a voice-led reel from an alignment; `takes_to_plan.py` plans from said words; `make_placeholders.py`, `make_icons.py`, `make_sfx_pack.py`, `add_to_library.py` (put sounds in the user's Audio library).
+- `scripts/make_reversed.py` pre-renders a reversed or boomerang piece (Concat cannot play backwards): the trick that makes a short calm piece last twice as long.
+- `examples/split_screen_gen.py` is the real generator of the split-screen reel with the client's texts replaced by placeholders (source in/out with speed and reversed pieces, masked top layer, white balance per layer, voice chain on speakers only, plates, rise-and-fade cards, one-word captions, soft swishes, previews, save, export). **Copy and adapt it** for any layered edit; its docstring lists the plan files it reads.
+- `examples/listener_search.py` is the beam search for listening footage (see `video-edit-playbook/references/hacks.md` section 6); also reference code to adapt, thresholds were tuned to one person.
+- If `--list-tools` of the Concat binary you use shows `clip_masks` instead of `clip_mask` (newer upstream), pass a stack of masks: check the schema before running a recipe from here.
 
 ## Honest limits to state to the user
 

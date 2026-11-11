@@ -14,8 +14,11 @@ Layout built (lane numbers are what Concat's `title_add above` and captions_add 
   above  captions and titles;  new audio lanes at the bottom: effects (one lane per letter), music
 Inputs (all times in seconds on the timeline the alignment defines; --remap moves them with a tightened one):
   alignment: {"segments": [{"edited_start","edited_end","raw_start","raw_end"}, ...], "edited_duration"?}
-  placeholders: [{"png","start","end","slide"?: true}]     icons: [{"png","start","end","scale","offsetX","offsetY"}]
-  captions: {"offsetY","style","captions":[{"start","end","text"}]}   titles: [{"start","duration","offsetY","style":{...}}]
+  placeholders: [{"png","start","end","slide"?: true,"motion"?}]     icons: [{"png","start","end","scale","offsetX","offsetY"}]
+  captions: {"offsetY","style","captions":[{"start","end","text"}]}   titles: [{"start","duration","offsetY","style":{...},"motion"?,"words"?}]
+  Concat 0.2.10 only: `motion` = {"in":{"kind":"rise","seconds":0.25},"out":{"kind":"fade","seconds":0.3},"loop":{...}} (clip_update patch.motion,
+  instead of the keyframes `slide` writes); `words` (titles) = [{"start":0,"end":5,"patch":{"color":"#E8B4B8","fontWeight":800}}] (title_style_words,
+  character positions: a word in its own colour without a second clip).
   sfx: [{"file","start","volume","lane"}]                  punches: [{"time","scale","ramp"}] (zoom on the clip holding `time`)
 All output paths must be under the home folder (the MCP server refuses to write elsewhere).
 """
@@ -134,6 +137,9 @@ def main() -> None:
             if p.get("transition"):  # e.g. {"id": "concat.dissolve", "duration": 0.4}
                 steps.append({"tool": "clip_update", "args": {"path": proj, "clipId": f"${c}.createdId",
                                                               "patch": {"transitionIn": p["transition"]}}})
+            if p.get("motion"):  # 0.2.10+: entrance/exit/loop by name instead of keyframes
+                steps.append({"tool": "clip_update", "args": {"path": proj, "clipId": f"${c}.createdId",
+                                                              "patch": {"motion": p["motion"]}}})
             if p.get("slide"):  # rises 10 % of the frame while fading in over 0.22 s
                 f = min(0.22 / dur, 0.9)
                 steps += [key(c, "opacity", 0.0, 0.0), key(c, "opacity", f, 1.0),
@@ -199,7 +205,13 @@ def main() -> None:
     if a.titles:
         for t in json.loads(a.titles.read_text()):
             t = {**t, "start": mt(t["start"]), "duration": round(mt(t["start"] + t["duration"]) - mt(t["start"]), 3)}
-            steps.append({"tool": "title_add", "args": {"path": proj, "above": True, **t}})
+            motion, words = t.pop("motion", None), t.pop("words", [])
+            steps.append({"tool": "title_add", "args": {"path": proj, "above": True, **t}, "as": f"ti{len(steps)}"})
+            tid = steps[-1]["as"]
+            if motion:
+                steps.append({"tool": "clip_update", "args": {"path": proj, "clipId": f"${tid}.createdId", "patch": {"motion": motion}}})
+            for wd in words:
+                steps.append({"tool": "title_style_words", "args": {"path": proj, "clipId": f"${tid}.createdId", **wd}})
 
     steps.append({"tool": "project_save", "args": {"path": proj}})
     for t in [x for x in a.preview.split(",") if x]:

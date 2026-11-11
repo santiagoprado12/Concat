@@ -18,6 +18,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 
 
 class Session:
@@ -117,6 +118,10 @@ def main() -> None:
         if a.steps:
             results: dict = {}
             for i, step in enumerate(json.load(open(a.steps))):
+                if step["tool"] == "sleep":  # pseudo tool {"tool": "sleep", "args": {"seconds": 60}}: wait for a job the window runs by itself
+                    time.sleep(float(step.get("args", {}).get("seconds", 1)))
+                    print(f"[{i}] sleep {step.get('args', {}).get('seconds', 1)} s")
+                    continue
                 args = subst(step.get("args", {}), results)
                 ok, out = s.tool(step["tool"], args)
                 results[step.get("as", f"s{i}")] = results["last"] = out if ok else {}

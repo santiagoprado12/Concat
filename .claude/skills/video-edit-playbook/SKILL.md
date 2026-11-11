@@ -71,7 +71,7 @@ Each step ends with a **gate**: do not move on until it passes. Say the result t
 
 ### 7. Build with a generator through MCP
 - One generator script writes `steps.json` (copy `replicate-style-in-concat/examples/split_screen_gen.py` for layered edits or use `build_steps.py` for voice-led reels); `mcp_run.py` runs it. New project folder per version (`<name>_vN`). Mint every lane first (`track_add`), pass `trackId` explicitly, use `title_add above: true` only for the main title. Step names without dots. End with `project_save`, then previews, then exports.
-- Voice chain on **every** voice clip, in this order, without being asked: `concat.denoise` 100, `concat.enhance-voice` 100, `concat.loudness` -16. Listening/other clips muted.
+- Voice chain on **every** voice clip, in this order, without being asked: `concat.denoise` 100, `concat.enhance-voice` 100, `concat.loudness` -16, after the ffmpeg pre-clean of the raw. Listening/other clips muted. (`setClipVoice` voice isolation does not work headless: do not rely on it; `references/concat-version.md` has the measurements.)
 - Long runs: `nohup python3 -I mcp_run.py ... > log 2>&1 &` and poll the log for `"state":"done"` (a foreground tool call dies at 10 minutes).
 - **Gate:** the run reports 0 failures; `timeline_read` shows the expected number of clips on each lane.
 

@@ -6,7 +6,7 @@
   python3 -I mcp_run.py --bin <concat 0.2.10 binary> STEPS.json     # opens, re-masks every clip, saves
 
 Why: from 0.2.10 a clip has `masks` (a list) and the app no longer reads the old `mask` field. A v1 project opens
-without any error but every clip that was masked is drawn WITHOUT its mask: in the split-screen reel (sala_v17, 17
+without any error but every clip that was masked is drawn WITHOUT its mask: in the split-screen reel (the two-person reel, 17
 masked clips) the second person's half came out empty, in previews and in the export. Found 2026-11-11.
 
 What does NOT work (tried): rewriting concat.json by hand to put `masks` in each clip, with or without `version: 2`.

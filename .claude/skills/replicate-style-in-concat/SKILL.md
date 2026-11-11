@@ -106,7 +106,7 @@ Enable **noise cancellation and voice enhancement** on every clip that carries a
 
 ## Scripts and examples in this skill
 
-- `scripts/mcp_run.py` runs a steps file; `build_steps.py` builds a voice-led reel from an alignment; `takes_to_plan.py` plans from said words; `make_placeholders.py`, `make_icons.py`, `make_sfx_pack.py`, `add_to_library.py` (put sounds in the user's Audio library).
+- `scripts/mcp_run.py` runs a steps file (`{"tool":"sleep","args":{"seconds":60}}` waits; `--mode window` needs the user to turn on Settings > Automation); `scripts/migrate_v1_masks.py` re-masks a project saved by 0.2.8; `build_steps.py` builds a voice-led reel from an alignment (0.2.10: `motion` and `words` entries instead of keyframes and extra clips); `takes_to_plan.py` plans from said words; `make_placeholders.py`, `make_icons.py`, `make_sfx_pack.py`, `add_to_library.py` (put sounds in the user's Audio library).
 - `scripts/make_reversed.py` pre-renders a reversed or boomerang piece (Concat cannot play backwards): the trick that makes a short calm piece last twice as long.
 - `examples/split_screen_gen.py` is the real generator of the split-screen reel with the client's texts replaced by placeholders (source in/out with speed and reversed pieces, masked top layer, white balance per layer, voice chain on speakers only, plates, rise-and-fade cards, one-word captions, soft swishes, previews, save, export). **Copy and adapt it** for any layered edit; its docstring lists the plan files it reads.
 - `examples/listener_search.py` is the beam search for listening footage (see `video-edit-playbook/references/hacks.md` section 6); also reference code to adapt, thresholds were tuned to one person.

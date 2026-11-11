@@ -8,6 +8,9 @@ Contents: 1 see what Claude cannot watch · 2 sound as numbers · 3 link the tra
 
 ## 1. See what Claude cannot watch
 
+> **Version: written for Concat 0.2.10.** Check `concat --version` first; if the binary is older, rebuild it (`concat-version.md` next to this file has the commands, what changed since 0.2.8, and the fix for the masks of old projects).
+
+
 **Many frames in one image** (`frames_grid.py`): one picture, up to about 60 tiles, each labelled with its time.
 ```bash
 uv run $S/analyze-reference-video/scripts/frames_grid.py VIDEO --times 3:9:0.5 --out grid.jpg           # a frame every 0.5 s
@@ -125,7 +128,7 @@ Rules this user set: looking at the camera or at the other person (best at whoev
 
 ## 7. Picture, layout and text
 
-- **Split screen** (verified): raw A on `T1`, raw B on `T2` (drawn above), mask on B `{"shape":"linear","x":0,"y":0,"rotation":90,"invert":true,"feather":0.14}` via `clip_mask` (check `--list-tools`: newer Concat has `clip_masks` with a stack of masks). Which half it keeps depends on `rotation` and `invert`: render a `preview_frame` and look. Scaling both layers (`clip_transform scale 1.12`) keeps the seam in the middle and crops feet/floor.
+- **Split screen** (verified): raw A on `T1`, raw B on `T2` (drawn above), mask on B (0.2.8: `clip_mask` `{"shape":"linear","x":0,"y":0,"rotation":90,"invert":true,"feather":0.14}` ; in 0.2.10 `clip_masks` with `[{"source":{"kind":"shape","shape":"linear","width":0.66,"height":0.66,"roundness":0},"mode":"add","x":0,"y":0,"rotation":90,"feather":0.14,"invert":true}]`). Which half it keeps depends on `rotation` and `invert`: render a `preview_frame` and look. Scaling both layers (`clip_transform scale 1.12`) keeps the seam in the middle and crops feet/floor.
 - **Locked-off camera?** SIFT+RANSAC on the static top band of one frame of each raw: scale 1.0009 and 2 px shift = no alignment needed. Check once.
 - **Lanes**: higher number draws above. Footage `T1`, other picture layers `T2`; mint all lanes first (`track_add`; `bottom: true` for sound lanes; ids come back in `createdId`, lowercase, e.g. `t4`); pass `trackId` explicitly to `title_add`; `above: true` takes the first free lane above everything over its span **including lanes you minted for icons** (images added afterwards were pushed to other times).
 - **Titles**: `title_add {start, duration, style: {content, fontFamily, fontSize (fraction of frame height; 0.04 title, 0.034 captions, 0.019 plates), fontWeight, color, shadow, lineHeight, align, background (#rrggbbaa), backgroundPaddingX/Y/Radius, strokeWidth/strokeColor}, offsetY}`; sideways with `clip_transform {offsetX}` (the tool only takes offsetY); `\n` makes two lines; `tracking` 0.06 breaks chips across three lines (leave 0).

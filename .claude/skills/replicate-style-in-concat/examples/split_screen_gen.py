@@ -92,7 +92,9 @@ lanes["emo1"] = "T4"
 
 VOICE = [{"id": "concat.denoise", "params": {"strength": 100}}, {"id": "concat.enhance-voice", "params": {"amount": 100}}, {"id": "concat.loudness", "params": {"target": -16}}]
 WB_A = [{"id": "concat.white-balance", "params": {"temperature": 7300, "tint": 0}}, {"id": "concat.exposure", "params": {"stops": 0.12}}]
-MASK_B = {"shape": "linear", "x": 0, "y": 0, "rotation": 90, "invert": True, "feather": 0.14}
+# Concat 0.2.10+: a clip has a LIST of masks (`clip_masks`); 0.2.8 had one `clip_mask` {shape, x, y, rotation, invert, feather}.
+MASK_B = [{"source": {"kind": "shape", "shape": "linear", "width": 0.66, "height": 0.66, "roundness": 0.0},
+           "mode": "add", "x": 0.0, "y": 0.0, "rotation": 90.0, "feather": 0.14, "invert": True}]
 
 
 import subprocess
@@ -135,7 +137,7 @@ def raw_clip(who, name, start_fr, in_s, n_fr, speaker, speed=1.0, rev_src=None):
     step("clip_update", {"clipId": f"${name}.createdId", "patch": patch})
     step("clip_transform", {"clipId": f"${name}.createdId", "scale": ZOOM})
     if who == "B":
-        step("clip_mask", {"clipId": f"${name}.createdId", "mask": MASK_B})
+        step("clip_masks", {"clipId": f"${name}.createdId", "masks": MASK_B})
 
 
 for t in turns:

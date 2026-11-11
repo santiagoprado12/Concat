@@ -5,6 +5,9 @@ description: Rebuild an edit in Concat through its MCP server - lay the user's r
 
 # Replicating an edit in Concat
 
+> **Version: written for Concat 0.2.10.** Check `concat --version` first; if the binary is older, rebuild it (`../video-edit-playbook/references/concat-version.md` has the commands, what changed since 0.2.8, and the fix for the masks of old projects).
+
+
 **The standard step-by-step process (with gates and every trick) is `video-edit-playbook`: start there.** Order of work: `propose-edit-plan` (canvas the user approves) -> `analyze-reference-video` -> `distill-editing-style` -> this skill. Companion skills: `analyze-reference-video` (turns videos into evidence), `distill-editing-style` (turns evidence into a profile). **Read `references/learnings.md` before starting and add to it after every session** - it holds what has been verified against the real app and is the main way this skill improves.
 
 ## Connect to Concat
@@ -84,7 +87,7 @@ New projects have lanes `T1..T4`. **A higher lane number is drawn above a lower 
 
 ## Workflow for "two raw takes of one person, shown side by side" (split screen)
 
-1. Check the camera did not move (SIFT/RANSAC on the static top band of one frame of each raw), then lay raw A on `T1`, raw B on `T2` with a linear `clip_mask` on the vertical centre line (feather about 0.14) and cool the warmer layer until the wall matches at the seam; render previews and look.
+1. Check the camera did not move (SIFT/RANSAC on the static top band of one frame of each raw), then lay raw A on `T1`, raw B on `T2` with a linear mask (`clip_masks` in 0.2.10; `clip_mask` in 0.2.8) on the vertical centre line (feather about 0.14) and cool the warmer layer until the wall matches at the seam; render previews and look.
 2. Per raw: `phrases.py` for the spoken lines, choose the last good take of each line, transcribe each chosen piece alone with `whisper-cli --prompt`, align your own corrected caption text to its timings (`difflib`), end every cut after the word dies away (check the level in the last 80 ms of each cut in the export), splice a clean repeat when a take stumbles.
 3. **Plan the silent half before promising anything:** count the clean listening seconds against the seconds needed per person (see `references/learnings.md`, 2026-11-07, "The person who listens") with `analyze-reference-video/scripts/face_gaze.py` and `frame_descriptors.py`, look at a frame every 0.5 s of the candidates, slow only still pieces, join with boomerangs and cuts under a difference of about 9, lock the turns the user approves. If the rules cannot all be met, say it with the numbers and offer two or three sacrifices.
 4. Overlays (title, plates, one-word captions, image cards on their own lanes), the approved soft swish at each card, no music, voice chain, a small review render, then the full render after approval and, if asked, delivery through `.claude/skills/upload-to-drive-via-browser`. The numbers of the approved layout are in `propose-edit-plan/references/house-style.md`.
@@ -107,7 +110,7 @@ Enable **noise cancellation and voice enhancement** on every clip that carries a
 - `scripts/make_reversed.py` pre-renders a reversed or boomerang piece (Concat cannot play backwards): the trick that makes a short calm piece last twice as long.
 - `examples/split_screen_gen.py` is the real generator of the split-screen reel with the client's texts replaced by placeholders (source in/out with speed and reversed pieces, masked top layer, white balance per layer, voice chain on speakers only, plates, rise-and-fade cards, one-word captions, soft swishes, previews, save, export). **Copy and adapt it** for any layered edit; its docstring lists the plan files it reads.
 - `examples/listener_search.py` is the beam search for listening footage (see `video-edit-playbook/references/hacks.md` section 6); also reference code to adapt, thresholds were tuned to one person.
-- If `--list-tools` of the Concat binary you use shows `clip_masks` instead of `clip_mask` (newer upstream), pass a stack of masks: check the schema before running a recipe from here.
+- Recipes here were first verified on 0.2.8 and are now written for 0.2.10: masks are `clip_masks` (a list), titles can animate with `clip_update patch.motion`, projects saved by 0.2.8 lose their masks until `scripts/migrate_v1_masks.py` re-applies them. All in `../video-edit-playbook/references/concat-version.md`.
 
 ## Honest limits to state to the user
 

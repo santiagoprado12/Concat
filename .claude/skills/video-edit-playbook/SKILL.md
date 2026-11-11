@@ -5,6 +5,8 @@ description: The standard step-by-step process for turning a user's raw video (a
 
 # Video edit playbook (the standard process)
 
+> **Version: written for Concat 0.2.10.** Check `concat --version` first; if the binary is older, rebuild it (`references/concat-version.md` in `video-edit-playbook` has the commands, what changed since 0.2.8, and the fix for the masks of old projects).
+
 Written after four videos with this user (a list reel, a copy of a collaborator's CapCut edit, a talking-head reel with B-roll and a split-screen two-character reel, 17 review rounds). Following it in order gets similar results with fewer rounds. **Every trick, number and command is in `references/hacks.md`; this page is the order of work and the gates.** Read `propose-edit-plan/references/house-style.md` ("Our style in one page") and `replicate-style-in-concat/references/learnings.md` before step 1.
 
 Claude cannot watch or hear. Everything below exists to turn video and sound into **images and numbers Claude can read**: a grid of frames (`frames_grid.py`), sound levels (`audio_peek.py`), face metrics (`face_gaze.py`), differences between frames (`frame_descriptors.py`), spectrograms. When in doubt, make a picture of it and look.
@@ -30,7 +32,7 @@ Each step ends with a **gate**: do not move on until it passes. Say the result t
 
 ### 0. Intake (2 minutes)
 - Ask nothing you can find out. Note what arrived: raw file(s), reference (link, video, screenshot, screen recording), script/table, extra context, brand.
-- Check tools once: `ffmpeg -version`, `uv --version`, `whisper-cli --help`, the Concat binary (`<repo>/src/target/debug/concat --mcp --list-tools`; an old binary may lack tools, and newer upstream versions renamed `clip_mask` to `clip_masks`: trust `--list-tools`), the Whisper model (`~/Library/Application Support/app.concat.editor/whisper-models/ggml-base.bin`; ask before downloading anything).
+- Check tools once: `ffmpeg -version`, `uv --version`, `whisper-cli --help`, the Concat binary (**`<repo>/src/target/debug/concat --version` must say 0.2.10 or newer, otherwise rebuild: read `references/concat-version.md` first**; it also lists what changed from 0.2.8 and the masks of old projects), the Whisper model (`~/Library/Application Support/app.concat.editor/whisper-models/ggml-base.bin`; ask before downloading anything).
 - **Gate:** you know which of the four situations this is: (a) one raw take of a person with retakes + a reference to copy; (b) raw + the reference's edited version (map it with `align_audio.py`); (c) a screen recording of someone else's finished edit to copy exactly; (d) two or more raw takes to be combined (split screen, before/after).
 
 ### 1. Reference in, if there is one
